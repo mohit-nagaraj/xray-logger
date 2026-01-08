@@ -1,12 +1,11 @@
 """Tests for API configuration."""
 
-import os
-import tempfile
-from unittest import mock
+from pathlib import Path
 
 import pytest
 
 from api.config import APIConfig, load_config
+from shared.config import CONFIG_FILENAME
 
 
 class TestAPIConfig:
@@ -16,132 +15,94 @@ class TestAPIConfig:
         """Config has expected default values."""
         config = APIConfig()
         assert config.database_url == "postgresql+asyncpg://localhost:5432/xray"
-        assert config.host == "0.0.0.0"
-        assert config.port == 8000
         assert config.debug is False
 
     def test_custom_values(self) -> None:
         """Config accepts custom values."""
         config = APIConfig(
             database_url="sqlite+aiosqlite:///./test.db",
-            host="127.0.0.1",
-            port=9000,
             debug=True,
         )
         assert config.database_url == "sqlite+aiosqlite:///./test.db"
-        assert config.host == "127.0.0.1"
-        assert config.port == 9000
         assert config.debug is True
 
 
 class TestLoadConfig:
     """Tests for load_config function."""
 
-    def test_defaults_with_no_args(self) -> None:
-        """Load config returns defaults when no args provided."""
+    def test_defaults_with_no_config_file(self, tmp_path: Path, monkeypatch) -> None:
+        """Load config returns defaults when no config file exists."""
+        monkeypatch.chdir(tmp_path)
         config = load_config()
         assert config.database_url == "postgresql+asyncpg://localhost:5432/xray"
-        assert config.port == 8000
         assert config.debug is False
 
-    def test_env_var_override(self) -> None:
-        """Environment variables override defaults."""
-        env = {
-            "XRAY_DATABASE_URL": "postgresql+asyncpg://prod:5432/xray_prod",
-            "XRAY_HOST": "0.0.0.0",
-            "XRAY_PORT": "9000",
-            "XRAY_DEBUG": "true",
-        }
-        with mock.patch.dict(os.environ, env, clear=False):
-            config = load_config()
+    def test_loads_from_yaml_file(self, tmp_path: Path) -> None:
+        """Config loads from explicit YAML file."""
+        config_file = tmp_path / "test.yaml"
+        config_file.write_text(
+            """
+api:
+  database_url: postgresql+asyncpg://prod:5432/xray_prod
+  debug: true
+"""
+        )
 
+        config = load_config(config_file=config_file)
         assert config.database_url == "postgresql+asyncpg://prod:5432/xray_prod"
-        assert config.host == "0.0.0.0"
-        assert config.port == 9000
         assert config.debug is True
 
-    def test_kwargs_override_env_vars(self) -> None:
-        """Explicit kwargs take priority over env vars."""
-        env = {"XRAY_PORT": "9000"}
-        with mock.patch.dict(os.environ, env, clear=False):
-            config = load_config(port=7000)
-
-        assert config.port == 7000
-
-    def test_yaml_file_loading(self) -> None:
-        """Config loads from YAML file."""
-        yaml_content = """
-database_url: sqlite+aiosqlite:///./yaml.db
-host: localhost
-port: 8888
-debug: true
+    def test_auto_discovers_config_file(self, tmp_path: Path, monkeypatch) -> None:
+        """Config auto-discovers xray.config.yaml from cwd."""
+        config_file = tmp_path / CONFIG_FILENAME
+        config_file.write_text(
+            """
+api:
+  database_url: sqlite+aiosqlite:///./discovered.db
 """
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-            f.write(yaml_content)
-            f.flush()
-            yaml_path = f.name
+        )
+        monkeypatch.chdir(tmp_path)
 
-        try:
-            config = load_config(config_file=yaml_path)
-            assert config.database_url == "sqlite+aiosqlite:///./yaml.db"
-            assert config.host == "localhost"
-            assert config.port == 8888
-            assert config.debug is True
-        finally:
-            os.unlink(yaml_path)
+        config = load_config()
+        assert config.database_url == "sqlite+aiosqlite:///./discovered.db"
 
-    def test_env_vars_override_yaml(self) -> None:
-        """Env vars take priority over YAML file."""
-        yaml_content = """
-database_url: sqlite+aiosqlite:///./yaml.db
-port: 8888
+    def test_kwargs_override_yaml(self, tmp_path: Path) -> None:
+        """Explicit kwargs override YAML values."""
+        config_file = tmp_path / "test.yaml"
+        config_file.write_text(
+            """
+api:
+  database_url: postgresql://yaml/db
+  debug: false
 """
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False) as f:
-            f.write(yaml_content)
-            f.flush()
-            yaml_path = f.name
+        )
 
-        try:
-            env = {"XRAY_PORT": "9999"}
-            with mock.patch.dict(os.environ, env, clear=False):
-                config = load_config(config_file=yaml_path)
+        config = load_config(
+            config_file=config_file,
+            database_url="postgresql://override/db",
+        )
+        assert config.database_url == "postgresql://override/db"
+        assert config.debug is False  # From YAML
 
-            # Env var wins for port
-            assert config.port == 9999
-            # YAML still applies for database_url
-            assert config.database_url == "sqlite+aiosqlite:///./yaml.db"
-        finally:
-            os.unlink(yaml_path)
-
-    def test_nonexistent_yaml_file_ignored(self) -> None:
-        """Nonexistent YAML file is silently ignored."""
+    def test_nonexistent_yaml_file_uses_defaults(self) -> None:
+        """Nonexistent YAML file results in defaults."""
         config = load_config(config_file="/nonexistent/path.yaml")
-        # Should return defaults without error
-        assert config.port == 8000
+        assert config.database_url == "postgresql+asyncpg://localhost:5432/xray"
 
-    def test_port_type_conversion(self) -> None:
-        """Port string is converted to int."""
-        env = {"XRAY_PORT": "12345"}
-        with mock.patch.dict(os.environ, env, clear=False):
-            config = load_config()
-
-        assert config.port == 12345
-        assert isinstance(config.port, int)
-
-    def test_debug_flag_parsing_true(self) -> None:
+    def test_debug_flag_parsing_true(self, tmp_path: Path) -> None:
         """Debug flag parses various truthy values."""
         for value in ["true", "True", "TRUE", "1", "yes", "Yes"]:
-            env = {"XRAY_DEBUG": value}
-            with mock.patch.dict(os.environ, env, clear=False):
-                config = load_config()
+            config_file = tmp_path / "test.yaml"
+            config_file.write_text(f"api:\n  debug: {value}")
+            config = load_config(config_file=config_file)
             assert config.debug is True, f"Failed for value: {value}"
 
-    def test_debug_flag_parsing_false(self) -> None:
+    def test_debug_flag_parsing_false(self, tmp_path: Path) -> None:
         """Debug flag parses various falsy values."""
-        for value in ["false", "False", "FALSE", "0", "no", "No", ""]:
-            env = {"XRAY_DEBUG": value}
-            with mock.patch.dict(os.environ, env, clear=False):
-                config = load_config()
+        for value in ["false", "False", "FALSE", "0", "no", "No"]:
+            config_file = tmp_path / "test.yaml"
+            config_file.write_text(f"api:\n  debug: {value}")
+            config = load_config(config_file=config_file)
             assert config.debug is False, f"Failed for value: {value}"
 
     def test_debug_flag_bool_kwarg(self) -> None:
@@ -152,20 +113,41 @@ port: 8888
         config = load_config(debug=False)
         assert config.debug is False
 
-    def test_none_kwargs_ignored(self) -> None:
-        """None kwargs don't override existing values."""
-        env = {"XRAY_PORT": "9000"}
-        with mock.patch.dict(os.environ, env, clear=False):
-            config = load_config(port=None)
+    def test_none_kwargs_dont_override(self, tmp_path: Path) -> None:
+        """None kwargs don't override YAML values."""
+        config_file = tmp_path / "test.yaml"
+        config_file.write_text(
+            """
+api:
+  database_url: postgresql://yaml/db
+"""
+        )
 
-        # None kwarg shouldn't override env var
-        assert config.port == 9000
+        config = load_config(config_file=config_file, database_url=None)
+        assert config.database_url == "postgresql://yaml/db"
 
     def test_sqlite_for_local_development(self) -> None:
         """SQLite can be configured for local development."""
         config = load_config(database_url="sqlite+aiosqlite:///./xray.db")
         assert "sqlite" in config.database_url
         assert "aiosqlite" in config.database_url
+
+    def test_ignores_sdk_section(self, tmp_path: Path) -> None:
+        """API config ignores sdk section."""
+        config_file = tmp_path / "test.yaml"
+        config_file.write_text(
+            """
+sdk:
+  base_url: http://sdk:8000
+api:
+  database_url: postgresql://localhost/xray
+"""
+        )
+
+        config = load_config(config_file=config_file)
+        assert config.database_url == "postgresql://localhost/xray"
+        # Verify sdk section doesn't leak into API config
+        assert not hasattr(config, "base_url")
 
 
 class TestConfigImports:

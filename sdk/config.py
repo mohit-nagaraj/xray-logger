@@ -1,18 +1,20 @@
-"""SDK configuration with support for environment variables and YAML files.
+"""SDK configuration.
+
+Reads from `xray.config.yaml` in project root under the `sdk:` section.
 
 Configuration priority (highest to lowest):
 1. Explicit kwargs passed to load_config()
-2. Environment variables (XRAY_*)
-3. YAML config file (if provided)
-4. Default values
+2. xray.config.yaml file (auto-discovered)
+3. Default values
 """
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+from shared.config import find_config_file, get_section, load_yaml_file
 
 if TYPE_CHECKING:
     from shared.types import DetailLevel
@@ -23,7 +25,7 @@ class XRayConfig:
     """SDK configuration for X-Ray client.
 
     Attributes:
-        base_url: API endpoint URL. Must be configured (no default).
+        base_url: API endpoint URL (required for sending data).
         api_key: Optional API key for authentication.
         buffer_size: Max events to buffer before dropping (default: 1000).
         flush_interval: Seconds between buffer flushes (default: 5.0).
@@ -44,68 +46,46 @@ def _get_default_detail_level() -> DetailLevel:
     return DetailLevel.summary
 
 
-def _load_yaml_config(config_file: str | Path) -> dict[str, Any]:
-    """Load configuration from a YAML file."""
-    try:
-        import yaml
-    except ImportError as err:
-        raise ImportError(
-            "PyYAML is required to load config files. Install with: pip install pyyaml"
-        ) from err
-
-    path = Path(config_file)
-    if not path.exists():
-        return {}
-
-    with open(path) as f:
-        return yaml.safe_load(f) or {}
-
-
 def load_config(
     config_file: str | Path | None = None,
     **overrides: Any,
 ) -> XRayConfig:
-    """Load SDK configuration with priority: overrides > env vars > yaml > defaults.
+    """Load SDK configuration from xray.config.yaml.
 
     Args:
-        config_file: Optional path to YAML config file.
+        config_file: Optional explicit path to config file.
+                     If not provided, auto-discovers xray.config.yaml from cwd.
         **overrides: Direct config overrides (highest priority).
 
     Returns:
         XRayConfig instance.
 
     Example:
-        # From environment variables
+        # Auto-discover config from project root
         config = load_config()
 
-        # From YAML file with overrides
-        config = load_config("xray.yaml", api_key="override-key")
+        # Explicit config file
+        config = load_config("path/to/xray.config.yaml")
 
-        # Explicit configuration
-        config = load_config(base_url="http://localhost:8000")
+        # Programmatic override
+        config = load_config(base_url="http://localhost:9000")
     """
     from shared.types import DetailLevel
 
     config: dict[str, Any] = {}
 
-    # 1. Load from YAML file (lowest priority after defaults)
+    # 1. Load from YAML file
     if config_file:
-        config.update(_load_yaml_config(config_file))
+        yaml_config = load_yaml_file(config_file)
+    else:
+        # Auto-discover config file
+        found_file = find_config_file()
+        yaml_config = load_yaml_file(found_file) if found_file else {}
 
-    # 2. Override with environment variables
-    env_mapping = {
-        "base_url": "XRAY_BASE_URL",
-        "api_key": "XRAY_API_KEY",
-        "buffer_size": "XRAY_BUFFER_SIZE",
-        "flush_interval": "XRAY_FLUSH_INTERVAL",
-        "default_detail": "XRAY_DEFAULT_DETAIL",
-    }
+    # Extract sdk section
+    config.update(get_section(yaml_config, "sdk"))
 
-    for key, env_var in env_mapping.items():
-        if env_val := os.getenv(env_var):
-            config[key] = env_val
-
-    # 3. Override with explicit kwargs (highest priority)
+    # 2. Override with explicit kwargs (highest priority)
     config.update({k: v for k, v in overrides.items() if v is not None})
 
     # Type conversions

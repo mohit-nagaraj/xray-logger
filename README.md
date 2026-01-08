@@ -5,14 +5,48 @@ Decision-reasoning observability for multi-step pipelines.
 ## Installation
 
 ```bash
-# Install SDK only
-pip install -e ".[sdk]"
+# Install everything
+pip install -e .
 
-# Install API only
-pip install -e ".[api]"
+# With dev tools (pytest, mypy, ruff)
+pip install -e ".[dev]"
+```
 
-# Install everything (SDK + API + dev tools)
-pip install -e ".[all]"
+## Configuration
+
+Create `xray.config.yaml` in your project root:
+
+```yaml
+sdk:
+  base_url: http://localhost:8000
+  api_key: your-api-key        # Optional
+  buffer_size: 1000            # Max events to buffer (default: 1000)
+  flush_interval: 5.0          # Seconds between flushes (default: 5.0)
+  default_detail: summary      # summary | full (default: summary)
+
+api:
+  database_url: postgresql+asyncpg://localhost:5432/xray
+  debug: false
+```
+
+### Configuration Options
+
+| Section | Field | Description | Default |
+|---------|-------|-------------|---------|
+| `sdk` | `base_url` | API endpoint URL | (none) |
+| `sdk` | `api_key` | Authentication key | (none) |
+| `sdk` | `buffer_size` | Max buffered events | 1000 |
+| `sdk` | `flush_interval` | Flush interval (seconds) | 5.0 |
+| `sdk` | `default_detail` | Payload detail level | summary |
+| `api` | `database_url` | Database connection URL | postgresql+asyncpg://localhost:5432/xray |
+| `api` | `debug` | Enable debug mode | false |
+
+### Local Development with SQLite
+
+```yaml
+api:
+  database_url: sqlite+aiosqlite:///./xray.db
+  debug: true
 ```
 
 ## Quick Start
@@ -22,11 +56,11 @@ pip install -e ".[all]"
 ```python
 from sdk import load_config
 
-# Load config from environment variables
+# Auto-discovers xray.config.yaml from project root
 config = load_config()
 
-# Or with explicit values
-config = load_config(base_url="http://localhost:8000")
+# Or with programmatic override
+config = load_config(base_url="http://localhost:9000")
 ```
 
 ### API Usage
@@ -34,37 +68,18 @@ config = load_config(base_url="http://localhost:8000")
 ```python
 from api import load_config
 
-# Default: PostgreSQL
+# Auto-discovers xray.config.yaml from project root
 config = load_config()
 
-# Local development: SQLite
+# For local development
 config = load_config(database_url="sqlite+aiosqlite:///./xray.db")
 ```
-
-## Configuration
-
-Configuration priority (highest to lowest):
-1. Explicit kwargs
-2. Environment variables (`XRAY_*`)
-3. YAML config file
-4. Default values
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `XRAY_BASE_URL` | SDK API endpoint | (none) |
-| `XRAY_API_KEY` | SDK authentication key | (none) |
-| `XRAY_BUFFER_SIZE` | SDK event buffer size | 1000 |
-| `XRAY_DATABASE_URL` | API database URL | postgresql+asyncpg://localhost:5432/xray |
-| `XRAY_PORT` | API server port | 8000 |
-| `XRAY_DEBUG` | API debug mode | false |
 
 ## Development
 
 ```bash
 # Install with dev dependencies
-pip install -e ".[all]"
+pip install -e ".[dev]"
 
 # Run tests
 pytest
@@ -74,4 +89,20 @@ mypy shared sdk api
 
 # Lint
 ruff check .
+```
+
+## Project Structure
+
+```
+/
+├── pyproject.toml      # Project config and dependencies
+├── xray.config.yaml    # User config file (create this)
+├── shared/             # Shared types and utilities
+│   ├── types.py        # StepType, RunStatus, StepStatus, DetailLevel
+│   └── config.py       # Config file discovery and parsing
+├── sdk/                # SDK for instrumenting pipelines
+│   └── config.py       # XRayConfig
+├── api/                # API backend
+│   └── config.py       # APIConfig
+└── tests/              # Test suite
 ```

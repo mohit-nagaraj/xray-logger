@@ -122,8 +122,19 @@ class TestEnumInteroperability:
         assert DetailLevel.full == "full"
 
     def test_all_exports_defined(self) -> None:
-        """__all__ exports all expected types."""
+        """__all__ exports all expected types and config utilities."""
         from shared import __all__
 
-        expected = {"StepType", "RunStatus", "StepStatus", "DetailLevel"}
+        expected = {
+            # Types
+            "StepType",
+            "RunStatus",
+            "StepStatus",
+            "DetailLevel",
+            # Config utilities
+            "CONFIG_FILENAME",
+            "find_config_file",
+            "load_yaml_file",
+            "get_section",
+        }
         assert set(__all__) == expected
