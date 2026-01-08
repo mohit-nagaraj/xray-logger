@@ -66,24 +66,6 @@ api:
         config = load_config()
         assert config.database_url == "sqlite+aiosqlite:///./discovered.db"
 
-    def test_kwargs_override_yaml(self, tmp_path: Path) -> None:
-        """Explicit kwargs override YAML values."""
-        config_file = tmp_path / "test.yaml"
-        config_file.write_text(
-            """
-api:
-  database_url: postgresql://yaml/db
-  debug: false
-"""
-        )
-
-        config = load_config(
-            config_file=config_file,
-            database_url="postgresql://override/db",
-        )
-        assert config.database_url == "postgresql://override/db"
-        assert config.debug is False  # From YAML
-
     def test_nonexistent_yaml_file_uses_defaults(self) -> None:
         """Nonexistent YAML file results in defaults."""
         config = load_config(config_file="/nonexistent/path.yaml")
@@ -105,30 +87,16 @@ api:
             config = load_config(config_file=config_file)
             assert config.debug is False, f"Failed for value: {value}"
 
-    def test_debug_flag_bool_kwarg(self) -> None:
-        """Debug flag accepts bool kwargs directly."""
-        config = load_config(debug=True)
-        assert config.debug is True
-
-        config = load_config(debug=False)
-        assert config.debug is False
-
-    def test_none_kwargs_dont_override(self, tmp_path: Path) -> None:
-        """None kwargs don't override YAML values."""
+    def test_sqlite_for_local_development(self, tmp_path: Path) -> None:
+        """SQLite can be configured for local development."""
         config_file = tmp_path / "test.yaml"
         config_file.write_text(
             """
 api:
-  database_url: postgresql://yaml/db
+  database_url: sqlite+aiosqlite:///./xray.db
 """
         )
-
-        config = load_config(config_file=config_file, database_url=None)
-        assert config.database_url == "postgresql://yaml/db"
-
-    def test_sqlite_for_local_development(self) -> None:
-        """SQLite can be configured for local development."""
-        config = load_config(database_url="sqlite+aiosqlite:///./xray.db")
+        config = load_config(config_file=config_file)
         assert "sqlite" in config.database_url
         assert "aiosqlite" in config.database_url
 
@@ -146,7 +114,6 @@ api:
 
         config = load_config(config_file=config_file)
         assert config.database_url == "postgresql://localhost/xray"
-        # Verify sdk section doesn't leak into API config
         assert not hasattr(config, "base_url")
 
 

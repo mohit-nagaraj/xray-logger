@@ -1,4 +1,4 @@
-"""X-Ray API - Backend for decision-reasoning observability."""
+"""X-Ray API backend."""
 
 from .config import APIConfig, load_config
 

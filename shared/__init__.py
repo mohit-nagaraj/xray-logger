@@ -4,12 +4,10 @@ from .config import CONFIG_FILENAME, find_config_file, get_section, load_yaml_fi
 from .types import DetailLevel, RunStatus, StepStatus, StepType
 
 __all__ = [
-    # Types
     "StepType",
     "RunStatus",
     "StepStatus",
     "DetailLevel",
-    # Config utilities
     "CONFIG_FILENAME",
     "find_config_file",
     "load_yaml_file",

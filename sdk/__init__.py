@@ -1,4 +1,4 @@
-"""X-Ray SDK - Decision-reasoning observability for multi-step pipelines."""
+"""X-Ray SDK for instrumenting pipelines."""
 
 from .config import XRayConfig, load_config
 

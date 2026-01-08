@@ -51,28 +51,13 @@ api:
 
 ## Quick Start
 
-### SDK Usage
-
 ```python
-from sdk import load_config
+from sdk import load_config as load_sdk_config
+from api import load_config as load_api_config
 
 # Auto-discovers xray.config.yaml from project root
-config = load_config()
-
-# Or with programmatic override
-config = load_config(base_url="http://localhost:9000")
-```
-
-### API Usage
-
-```python
-from api import load_config
-
-# Auto-discovers xray.config.yaml from project root
-config = load_config()
-
-# For local development
-config = load_config(database_url="sqlite+aiosqlite:///./xray.db")
+sdk_config = load_sdk_config()
+api_config = load_api_config()
 ```
 
 ## Development

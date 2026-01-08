@@ -1,6 +1,5 @@
 """Tests for SDK configuration."""
 
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -85,24 +84,6 @@ sdk:
         assert config.base_url == "http://discovered:8000"
         assert config.buffer_size == 2000
 
-    def test_kwargs_override_yaml(self, tmp_path: Path) -> None:
-        """Explicit kwargs override YAML values."""
-        config_file = tmp_path / "test.yaml"
-        config_file.write_text(
-            """
-sdk:
-  base_url: http://yaml-url:8000
-  buffer_size: 3000
-"""
-        )
-
-        config = load_config(
-            config_file=config_file,
-            base_url="http://override:9000",
-        )
-        assert config.base_url == "http://override:9000"
-        assert config.buffer_size == 3000  # From YAML
-
     def test_nonexistent_yaml_file_uses_defaults(self) -> None:
         """Nonexistent YAML file results in defaults."""
         config = load_config(config_file="/nonexistent/path.yaml")
@@ -139,19 +120,6 @@ sdk:
         assert config.default_detail == DetailLevel.full
         assert isinstance(config.default_detail, DetailLevel)
 
-    def test_none_kwargs_dont_override(self, tmp_path: Path) -> None:
-        """None kwargs don't override YAML values."""
-        config_file = tmp_path / "test.yaml"
-        config_file.write_text(
-            """
-sdk:
-  base_url: http://yaml-url:8000
-"""
-        )
-
-        config = load_config(config_file=config_file, base_url=None)
-        assert config.base_url == "http://yaml-url:8000"
-
     def test_ignores_api_section(self, tmp_path: Path) -> None:
         """SDK config ignores api section."""
         config_file = tmp_path / "test.yaml"
@@ -166,7 +134,6 @@ api:
 
         config = load_config(config_file=config_file)
         assert config.base_url == "http://sdk:8000"
-        # Verify api section doesn't leak into SDK config
         assert not hasattr(config, "database_url")
 
 
