@@ -8,6 +8,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 CONFIG_FILENAME = "xray.config.yaml"
 
 
@@ -25,8 +27,6 @@ def find_config_file(start_path: Path | None = None) -> Path | None:
 
 def load_yaml_file(config_file: str | Path) -> dict[str, Any]:
     """Load configuration from a YAML file."""
-    import yaml
-
     path = Path(config_file)
     if not path.exists():
         return {}
