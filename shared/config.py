@@ -31,7 +31,7 @@ def load_yaml_file(config_file: str | Path) -> dict[str, Any]:
     if not path.exists():
         return {}
 
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
 
 
