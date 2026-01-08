@@ -9,6 +9,28 @@ xray/
 └── api/        # Server for storage & queries
 ```
 
+## Installation
+
+```bash
+# For instrumenting your ML pipelines (lightweight)
+pip install xray[sdk]
+
+# For running the API server directly
+pip install xray[api]
+
+# For development (includes both + dev tools)
+pip install -e ".[all]"
+```
+
+| Extra | Use Case | Dependencies Added |
+|-------|----------|-------------------|
+| `[sdk]` | Instrument pipelines | httpx |
+| `[api]` | Run API server | fastapi, sqlalchemy, asyncpg, uvicorn |
+| `[dev]` | Development | pytest, mypy, ruff |
+| `[all]` | Everything | sdk + api + dev |
+
+**Note**: Base dependencies (pyyaml, pydantic) are always installed.
+
 ## Component Separation
 
 | Component | What it does | How it runs |

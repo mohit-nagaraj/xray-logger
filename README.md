@@ -5,12 +5,21 @@ Decision-reasoning observability for multi-step pipelines.
 ## Installation
 
 ```bash
-# Install everything
-pip install -e .
+# For instrumenting your ML pipelines (lightweight)
+pip install xray[sdk]
 
-# With dev tools (pytest, mypy, ruff)
-pip install -e ".[dev]"
+# For running the API server directly
+pip install xray[api]
+
+# For development (everything + dev tools)
+pip install -e ".[all]"
 ```
+
+| Extra | Use Case |
+|-------|----------|
+| `[sdk]` | Instrument pipelines in your application |
+| `[api]` | Run the API server directly |
+| `[all]` | Development (sdk + api + dev tools) |
 
 ## Configuration
 
@@ -63,8 +72,8 @@ api_config = load_api_config()
 ## Development
 
 ```bash
-# Install with dev dependencies
-pip install -e ".[dev]"
+# Install everything for development
+pip install -e ".[all]"
 
 # Run tests
 pytest
