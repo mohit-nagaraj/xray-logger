@@ -26,13 +26,14 @@ def find_config_file(start_path: Path | None = None) -> Path | None:
 
 
 def load_yaml_file(config_file: str | Path) -> dict[str, Any]:
-    """Load configuration from a YAML file."""
+    """Load configuration from a YAML file. Returns {} for non-dict content."""
     path = Path(config_file)
     if not path.exists():
         return {}
 
     with open(path, encoding="utf-8") as f:
-        return yaml.safe_load(f) or {}
+        content = yaml.safe_load(f)
+        return content if isinstance(content, dict) else {}
 
 
 def get_section(config: dict[str, Any], section: str) -> dict[str, Any]:

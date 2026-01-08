@@ -198,7 +198,7 @@ Users install the package and configure:
 # xray.config.yaml (in user's project root)
 sdk:
   base_url: https://xray-api.yourcompany.com
-  api_key: ${XRAY_API_KEY}  # From environment
+  api_key: your-api-key
   buffer_size: 1000
   flush_interval: 5.0
 ```

@@ -84,6 +84,22 @@ api:
         result = load_yaml_file(config_file)
         assert result == {}
 
+    def test_returns_empty_dict_for_list_yaml(self, tmp_path: Path) -> None:
+        """Returns empty dict when YAML contains a list instead of dict."""
+        config_file = tmp_path / "list.yaml"
+        config_file.write_text("- item1\n- item2\n- item3")
+
+        result = load_yaml_file(config_file)
+        assert result == {}
+
+    def test_returns_empty_dict_for_scalar_yaml(self, tmp_path: Path) -> None:
+        """Returns empty dict when YAML contains a scalar value."""
+        config_file = tmp_path / "scalar.yaml"
+        config_file.write_text("just a string")
+
+        result = load_yaml_file(config_file)
+        assert result == {}
+
 
 class TestGetSection:
     """Tests for get_section function."""
