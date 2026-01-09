@@ -8,7 +8,6 @@ from typing import Any
 from pydantic import BaseModel
 
 from shared.config import find_config_file, get_section, load_yaml_file
-from shared.types import DetailLevel
 
 
 class XRayConfig(BaseModel):
@@ -20,7 +19,6 @@ class XRayConfig(BaseModel):
     flush_interval: float = 5.0
     batch_size: int = 100
     http_timeout: float = 30.0
-    default_detail: DetailLevel = DetailLevel.summary
 
 
 def load_config(config_file: str | Path | None = None) -> XRayConfig:
