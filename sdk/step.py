@@ -20,7 +20,7 @@ MAX_PAYLOAD_DEPTH = 5  # Max recursion depth for nested structures
 
 # Payload externalization thresholds
 LARGE_LIST_THRESHOLD = 100  # Lists ≥100 items → externalize
-LARGE_STRING_THRESHOLD = 2048  # Strings ≥2KB → externalize
+LARGE_STRING_THRESHOLD = MAX_STRING_LENGTH  # Strings >1KB → externalize (same as truncation threshold to prevent data loss)
 PREVIEW_SIZE = 5  # Items to show in preview for large lists
 STRING_PREVIEW_SIZE = 100  # Chars to show in preview for large strings
 
@@ -131,7 +131,7 @@ def extract_candidate(item: dict[str, Any]) -> dict[str, Any]:
         item: A candidate dict with at least an ID field
 
     Returns:
-        Dict with id, score (if present), and reason (if present)
+        Dict with id, score, and reason (all always present for consistency)
     """
     result: dict[str, Any] = {}
 
@@ -141,21 +141,19 @@ def extract_candidate(item: dict[str, Any]) -> dict[str, Any]:
             result["id"] = item[field]
             break
 
-    # Extract score if present
+    # Extract score if present, default to None for consistent structure
+    result["score"] = None
     for field in ("score", "rank", "relevance", "confidence", "weight"):
         if field in item:
             result["score"] = item[field]
             break
 
-    # Extract reason if present
+    # Extract reason if present, default to None for consistent structure
+    result["reason"] = None
     for field in ("reason", "explanation", "rationale", "why", "filter_reason"):
         if field in item:
             result["reason"] = item[field]
             break
-
-    # If no reason found, set to None
-    if "reason" not in result:
-        result["reason"] = None
 
     return result
 
@@ -203,8 +201,9 @@ def summarize_payload(
     # Handle strings
     if isinstance(obj, str):
         length = len(obj)
-        # Large string: externalize with preview
-        if length >= LARGE_STRING_THRESHOLD and collector is not None:
+        # Large string (>1KB): externalize with preview if collector available
+        # This ensures no data loss for strings that would otherwise be truncated
+        if length > MAX_STRING_LENGTH and collector is not None:
             ref_id = collector.add(obj)
             return {
                 "_type": "str",
@@ -212,7 +211,7 @@ def summarize_payload(
                 "_ref": ref_id,
                 "_preview": obj[:STRING_PREVIEW_SIZE],
             }
-        # Small string: store full or truncated value
+        # Small string or no collector: store full or truncated value
         truncated = length > MAX_STRING_LENGTH
         return {
             "_type": "str",
@@ -246,13 +245,9 @@ def summarize_payload(
         def summarize_item(item: Any) -> Any:
             if item is None or isinstance(item, (bool, int, float)):
                 return item
-            elif isinstance(item, str):
-                # Truncate long strings in lists
-                if len(item) > MAX_STRING_LENGTH:
-                    return _truncate_string(item)
-                return item
             else:
-                # Recursively summarize complex items
+                # Recursively summarize complex items (including strings)
+                # This ensures consistent externalization for large strings
                 return summarize_payload(item, depth + 1, collector)
 
         # Large list: externalize with preview
@@ -322,7 +317,8 @@ def summarize_payload(
     if hasattr(obj, "id"):
         try:
             result["_id"] = str(getattr(obj, "id"))
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
+            # Silently ignore if 'id' attribute is not accessible or stringifiable
             pass
 
     return result
@@ -466,13 +462,13 @@ class Step:
 
     def end(
         self,
-        output: Any,
+        output: Any = None,
         status: StepStatus | str = StepStatus.success,
     ) -> None:
         """End the step with output.
 
         Args:
-            output: Step output data
+            output: Step output data (optional)
             status: Final status (success or error)
         """
         final_status = StepStatus(status) if isinstance(status, str) else status
