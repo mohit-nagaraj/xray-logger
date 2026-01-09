@@ -19,6 +19,8 @@ class TestXRayConfig:
         assert config.api_key is None
         assert config.buffer_size == 1000
         assert config.flush_interval == 5.0
+        assert config.batch_size == 100
+        assert config.http_timeout == 30.0
         assert config.default_detail == DetailLevel.summary
 
     def test_custom_values(self) -> None:
@@ -28,12 +30,16 @@ class TestXRayConfig:
             api_key="test-key",
             buffer_size=500,
             flush_interval=10.0,
+            batch_size=50,
+            http_timeout=15.0,
             default_detail=DetailLevel.full,
         )
         assert config.base_url == "http://localhost:9000"
         assert config.api_key == "test-key"
         assert config.buffer_size == 500
         assert config.flush_interval == 10.0
+        assert config.batch_size == 50
+        assert config.http_timeout == 15.0
         assert config.default_detail == DetailLevel.full
 
 

@@ -30,7 +30,7 @@ class Transport:
         self._worker_task: asyncio.Task[None] | None = None
         self._shutdown = asyncio.Event()
         self._started = False
-        self._batch_size = 100
+        self._batch_size = config.batch_size
 
     @property
     def is_started(self) -> bool:
@@ -51,7 +51,7 @@ class Transport:
             self._client = httpx.AsyncClient(
                 base_url=self._config.base_url,
                 headers=self._get_headers(),
-                timeout=30.0,
+                timeout=self._config.http_timeout,
             )
 
         self._shutdown.clear()
@@ -95,7 +95,7 @@ class Transport:
     async def _collect_batch(self) -> list[dict[str, Any]]:
         """Collect events into a batch with timeout."""
         batch: list[dict[str, Any]] = []
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         deadline = loop.time() + self._config.flush_interval
 
         while len(batch) < self._batch_size:
@@ -152,6 +152,9 @@ class Transport:
                 except asyncio.CancelledError:
                     pass
 
+        # Stop accepting new events before the final drain to prevent race condition
+        self._started = False
+
         remaining: list[dict[str, Any]] = []
         while not self._queue.empty():
             try:
@@ -161,13 +164,15 @@ class Transport:
 
         if remaining:
             logger.debug("Flushing %d remaining events", len(remaining))
-            await self._flush_batch(remaining)
+            try:
+                await self._flush_batch(remaining)
+            except Exception as e:
+                logger.warning("Error flushing remaining events during shutdown: %s", e)
 
         if self._client:
             await self._client.aclose()
             self._client = None
 
-        self._started = False
         logger.debug("Transport shutdown complete")
 
     def _get_headers(self) -> dict[str, str]:
