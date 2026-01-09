@@ -18,6 +18,8 @@ class XRayConfig(BaseModel):
     api_key: str | None = None
     buffer_size: int = 1000
     flush_interval: float = 5.0
+    batch_size: int = 100
+    http_timeout: float = 30.0
     default_detail: DetailLevel = DetailLevel.summary
 
 
