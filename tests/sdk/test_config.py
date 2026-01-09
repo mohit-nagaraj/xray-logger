@@ -6,7 +6,6 @@ import pytest
 
 from sdk.config import XRayConfig, load_config
 from shared.config import CONFIG_FILENAME
-from shared.types import DetailLevel
 
 
 class TestXRayConfig:
@@ -21,7 +20,6 @@ class TestXRayConfig:
         assert config.flush_interval == 5.0
         assert config.batch_size == 100
         assert config.http_timeout == 30.0
-        assert config.default_detail == DetailLevel.summary
 
     def test_custom_values(self) -> None:
         """Config accepts custom values."""
@@ -32,7 +30,6 @@ class TestXRayConfig:
             flush_interval=10.0,
             batch_size=50,
             http_timeout=15.0,
-            default_detail=DetailLevel.full,
         )
         assert config.base_url == "http://localhost:9000"
         assert config.api_key == "test-key"
@@ -40,7 +37,6 @@ class TestXRayConfig:
         assert config.flush_interval == 10.0
         assert config.batch_size == 50
         assert config.http_timeout == 15.0
-        assert config.default_detail == DetailLevel.full
 
 
 class TestLoadConfig:
@@ -63,7 +59,6 @@ sdk:
   api_key: yaml-key
   buffer_size: 3000
   flush_interval: 10.0
-  default_detail: full
 """
         )
 
@@ -72,7 +67,6 @@ sdk:
         assert config.api_key == "yaml-key"
         assert config.buffer_size == 3000
         assert config.flush_interval == 10.0
-        assert config.default_detail == DetailLevel.full
 
     def test_auto_discovers_config_file(self, tmp_path: Path, monkeypatch) -> None:
         """Config auto-discovers xray.config.yaml from cwd."""
@@ -111,20 +105,6 @@ sdk:
         assert isinstance(config.buffer_size, int)
         assert config.flush_interval == 7.5
         assert isinstance(config.flush_interval, float)
-
-    def test_detail_level_conversion(self, tmp_path: Path) -> None:
-        """Detail level string is converted to enum."""
-        config_file = tmp_path / "test.yaml"
-        config_file.write_text(
-            """
-sdk:
-  default_detail: full
-"""
-        )
-
-        config = load_config(config_file=config_file)
-        assert config.default_detail == DetailLevel.full
-        assert isinstance(config.default_detail, DetailLevel)
 
     def test_ignores_api_section(self, tmp_path: Path) -> None:
         """SDK config ignores api section."""
