@@ -98,13 +98,14 @@ def infer_count(obj: Any) -> int | None:
 def is_candidate_list(obj: Any) -> bool:
     """Check if object is a list of candidate-like dicts.
 
-    A candidate list is a list of dicts where each dict has an ID field.
+    A candidate list is a list of dicts where EVERY dict has an ID field.
+    We check ALL items to ensure correctness (no sampling).
 
     Args:
         obj: Any Python object
 
     Returns:
-        True if obj appears to be a list of candidates
+        True if obj is a list where every item is a dict with an ID field
     """
     if not isinstance(obj, (list, tuple)):
         return False
@@ -112,9 +113,8 @@ def is_candidate_list(obj: Any) -> bool:
     if len(obj) == 0:
         return False
 
-    # Check first few items to determine if this is a candidate list
-    sample_size = min(3, len(obj))
-    for item in obj[:sample_size]:
+    # Check ALL items to ensure correctness (heterogeneous lists should not be treated as candidates)
+    for item in obj:
         if not isinstance(item, dict):
             return False
         # Check if any ID field exists
@@ -242,24 +242,40 @@ def summarize_payload(
         # Determine item type
         item_type = type(items[0]).__name__ if count > 0 else None
 
+        # Helper to summarize list items - primitives stay as-is, complex types get summarized
+        def summarize_item(item: Any) -> Any:
+            if item is None or isinstance(item, (bool, int, float)):
+                return item
+            elif isinstance(item, str):
+                # Truncate long strings in lists
+                if len(item) > MAX_STRING_LENGTH:
+                    return _truncate_string(item)
+                return item
+            else:
+                # Recursively summarize complex items
+                return summarize_payload(item, depth + 1, collector)
+
         # Large list: externalize with preview
         if count >= LARGE_LIST_THRESHOLD and collector is not None:
             ref_id = collector.add(items)
+            # Summarize preview items for safety
+            preview = [summarize_item(item) for item in items[:PREVIEW_SIZE]]
             result: dict[str, Any] = {
                 "_type": "list",
                 "_count": count,
                 "_ref": ref_id,
-                "_preview": items[:PREVIEW_SIZE],
+                "_preview": preview,
             }
             if item_type:
                 result["_item_type"] = item_type
             return result
 
-        # Small list: store ALL values inline
+        # Small list: store ALL values inline, summarizing complex items
+        summarized_values = [summarize_item(item) for item in items]
         result = {
             "_type": "list",
             "_count": count,
-            "_values": items,
+            "_values": summarized_values,
         }
         if item_type:
             result["_item_type"] = item_type
@@ -411,6 +427,43 @@ class Step:
         else:
             self._reasoning.update(reasoning)
 
+    def _finalize_step(
+        self,
+        status: StepStatus,
+        output: Any = None,
+        error: BaseException | str | None = None,
+    ) -> None:
+        """Internal method to finalize the step.
+
+        Args:
+            status: Final status
+            output: Optional output data
+            error: Optional error (BaseException or string)
+        """
+        if self._ended_at is not None:
+            return  # Already ended, idempotent
+
+        self._ended_at = datetime.now(timezone.utc)
+        end_time_ns = time.perf_counter_ns()
+        self._duration_ms = (end_time_ns - self._start_time_ns) // 1_000_000
+
+        self._status = status
+
+        if error is not None:
+            # Use BaseException to handle KeyboardInterrupt, SystemExit, etc.
+            if isinstance(error, BaseException):
+                self._error_message = f"{type(error).__name__}: {error!s}"
+            else:
+                self._error_message = str(error)
+        elif output is not None:
+            # Use collector for large data externalization
+            output_collector = PayloadCollector()
+            self._output_summary = summarize_payload(output, collector=output_collector)
+            self._output_payloads = output_collector.get_payloads()
+            self._output_count = infer_count(output)
+
+        self._send_end_event()
+
     def end(
         self,
         output: Any,
@@ -422,43 +475,16 @@ class Step:
             output: Step output data
             status: Final status (success or error)
         """
-        if self._ended_at is not None:
-            return  # Already ended, idempotent
+        final_status = StepStatus(status) if isinstance(status, str) else status
+        self._finalize_step(status=final_status, output=output)
 
-        self._ended_at = datetime.now(timezone.utc)
-        end_time_ns = time.perf_counter_ns()
-        self._duration_ms = (end_time_ns - self._start_time_ns) // 1_000_000
-
-        self._status = StepStatus(status) if isinstance(status, str) else status
-
-        # Use collector for large data externalization
-        output_collector = PayloadCollector()
-        self._output_summary = summarize_payload(output, collector=output_collector)
-        self._output_payloads = output_collector.get_payloads()
-        self._output_count = infer_count(output)
-
-        self._send_end_event()
-
-    def end_with_error(self, error: Exception | str) -> None:
+    def end_with_error(self, error: BaseException | str) -> None:
         """End the step with an error.
 
         Args:
-            error: Exception or error message
+            error: Exception/BaseException or error message
         """
-        if self._ended_at is not None:
-            return  # Already ended
-
-        self._ended_at = datetime.now(timezone.utc)
-        end_time_ns = time.perf_counter_ns()
-        self._duration_ms = (end_time_ns - self._start_time_ns) // 1_000_000
-
-        self._status = StepStatus.error
-        if isinstance(error, Exception):
-            self._error_message = f"{type(error).__name__}: {error!s}"
-        else:
-            self._error_message = str(error)
-
-        self._send_end_event()
+        self._finalize_step(status=StepStatus.error, error=error)
 
     def _send_start_event(self) -> None:
         """Send step start event to transport."""

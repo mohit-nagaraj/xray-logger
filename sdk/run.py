@@ -48,10 +48,11 @@ class Run:
         self._ended_at: datetime | None = None
 
         # Input/output - use collector for large data externalization
+        # Note: use 'is not None' to handle falsy but valid inputs like [], 0, "", False
         self._input_collector = PayloadCollector()
         self._input_summary = (
             summarize_payload(input_data, collector=self._input_collector)
-            if input_data
+            if input_data is not None
             else None
         )
         self._output_summary: dict[str, Any] | None = None
@@ -105,7 +106,15 @@ class Run:
 
         Returns:
             New Step instance (already started)
+
+        Raises:
+            RuntimeError: If the run has already ended
         """
+        if self._ended_at is not None:
+            raise RuntimeError(
+                f"Cannot start step '{name}' - run '{self._id}' has already ended"
+            )
+
         step = Step(
             run=self,
             transport=self._transport,
@@ -119,6 +128,39 @@ class Run:
         self._step_index += 1
         return step
 
+    def _finalize_run(
+        self,
+        status: RunStatus,
+        output: Any = None,
+        error: BaseException | str | None = None,
+    ) -> None:
+        """Internal method to finalize the run.
+
+        Args:
+            status: Final status
+            output: Optional output data
+            error: Optional error (BaseException or string)
+        """
+        if self._ended_at is not None:
+            return  # Already ended, idempotent
+
+        self._ended_at = datetime.now(timezone.utc)
+        self._status = status
+
+        if error is not None:
+            # Use BaseException to handle KeyboardInterrupt, SystemExit, etc.
+            if isinstance(error, BaseException):
+                self._error_message = f"{type(error).__name__}: {error!s}"
+            else:
+                self._error_message = str(error)
+
+        if output is not None:
+            output_collector = PayloadCollector()
+            self._output_summary = summarize_payload(output, collector=output_collector)
+            self._output_payloads = output_collector.get_payloads()
+
+        self._send_end_event()
+
     def end(
         self,
         output: Any = None,
@@ -130,43 +172,17 @@ class Run:
             output: Final pipeline output
             status: Final status (success or error)
         """
-        if self._ended_at is not None:
-            return  # Already ended, idempotent
+        final_status = RunStatus(status) if isinstance(status, str) else status
+        self._finalize_run(status=final_status, output=output)
 
-        self._ended_at = datetime.now(timezone.utc)
-        self._status = RunStatus(status) if isinstance(status, str) else status
-
-        if output is not None:
-            output_collector = PayloadCollector()
-            self._output_summary = summarize_payload(output, collector=output_collector)
-            self._output_payloads = output_collector.get_payloads()
-
-        self._send_end_event()
-
-    def end_with_error(self, error: Exception | str, output: Any = None) -> None:
+    def end_with_error(self, error: BaseException | str, output: Any = None) -> None:
         """End the run with an error.
 
         Args:
-            error: Exception or error message
+            error: Exception/BaseException or error message
             output: Optional partial output
         """
-        if self._ended_at is not None:
-            return  # Already ended
-
-        self._ended_at = datetime.now(timezone.utc)
-        self._status = RunStatus.error
-
-        if isinstance(error, Exception):
-            self._error_message = f"{type(error).__name__}: {error!s}"
-        else:
-            self._error_message = str(error)
-
-        if output is not None:
-            output_collector = PayloadCollector()
-            self._output_summary = summarize_payload(output, collector=output_collector)
-            self._output_payloads = output_collector.get_payloads()
-
-        self._send_end_event()
+        self._finalize_run(status=RunStatus.error, output=output, error=error)
 
     def __enter__(self) -> Run:
         """Context manager entry."""
