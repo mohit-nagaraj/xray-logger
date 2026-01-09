@@ -285,15 +285,20 @@ def init_xray(config: XRayConfig | None = None) -> XRayClient:
     """
     global _client
 
-    # Shutdown existing client to prevent resource leaks (thread, event loop)
-    if _client is not None:
-        _client.shutdown()
-
     if config is None:
         config = load_config()
 
-    _client = XRayClient(config)
-    _client.start()
+    # Create new client first, before shutting down old one
+    # This ensures _client is never in an invalid state if creation fails
+    new_client = XRayClient(config)
+    new_client.start()
+
+    # Now safe to shutdown old client and swap
+    old_client = _client
+    _client = new_client
+
+    if old_client is not None:
+        old_client.shutdown()
 
     return _client
 

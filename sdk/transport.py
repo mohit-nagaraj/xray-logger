@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import queue
 from typing import Any
 
 import httpx
@@ -19,11 +20,17 @@ class Transport:
     Events are queued and sent in batches to minimize overhead.
     If the queue is full, events are dropped (fail-open).
     Network errors are logged but never crash the application.
+
+    Thread Safety:
+        Uses queue.Queue (thread-safe) for cross-thread event buffering.
+        The send() method can be safely called from any thread.
     """
 
     def __init__(self, config: XRayConfig) -> None:
         self._config = config
-        self._queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(
+        # Use thread-safe queue.Queue for cross-thread communication
+        # (send() called from main thread, worker runs in background thread)
+        self._queue: queue.Queue[dict[str, Any]] = queue.Queue(
             maxsize=config.buffer_size
         )
         self._client: httpx.AsyncClient | None = None
@@ -60,7 +67,7 @@ class Transport:
         logger.debug("Transport started")
 
     def send(self, event: dict[str, Any]) -> bool:
-        """Queue event for sending. Non-blocking, fail-open.
+        """Queue event for sending. Non-blocking, fail-open, thread-safe.
 
         Args:
             event: Event data to send.
@@ -75,7 +82,7 @@ class Transport:
         try:
             self._queue.put_nowait(event)
             return True
-        except asyncio.QueueFull:
+        except queue.Full:
             logger.warning("Event buffer full, dropping event")
             return False
 
@@ -93,7 +100,11 @@ class Transport:
                 await asyncio.sleep(1.0)
 
     async def _collect_batch(self) -> list[dict[str, Any]]:
-        """Collect events into a batch with timeout."""
+        """Collect events into a batch with timeout.
+
+        Uses polling with asyncio.sleep to avoid blocking the event loop
+        while waiting for events from the thread-safe queue.
+        """
         batch: list[dict[str, Any]] = []
         loop = asyncio.get_running_loop()
         deadline = loop.time() + self._config.flush_interval
@@ -104,12 +115,18 @@ class Transport:
                 break
 
             try:
-                event = await asyncio.wait_for(
-                    self._queue.get(), timeout=max(0.1, remaining)
-                )
+                # Non-blocking get from thread-safe queue
+                event = self._queue.get_nowait()
                 batch.append(event)
-            except asyncio.TimeoutError:
-                break
+            except queue.Empty:
+                # No events available, sleep briefly then retry
+                # Use shorter sleep when we have events (to batch quickly)
+                # Use longer sleep when empty (to avoid busy-waiting)
+                sleep_time = 0.01 if batch else min(0.1, remaining)
+                if sleep_time > 0:
+                    await asyncio.sleep(sleep_time)
+                else:
+                    break
 
         return batch
 
@@ -159,7 +176,7 @@ class Transport:
         while not self._queue.empty():
             try:
                 remaining.append(self._queue.get_nowait())
-            except asyncio.QueueEmpty:
+            except queue.Empty:
                 break
 
         if remaining:
