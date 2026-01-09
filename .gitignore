@@ -29,3 +29,4 @@ tasks/
 .taskmaster/
 .env.example
 .mcp.json
+__pycache__/
