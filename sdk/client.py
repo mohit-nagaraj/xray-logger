@@ -137,6 +137,8 @@ class XRayClient:
             future.result(timeout=5.0)
         except Exception as e:
             logger.warning("Failed to start X-Ray transport: %s", e)
+            # Clean up the thread and loop we just created to prevent resource leak
+            self._cleanup_thread_and_loop()
             # Fail open - client will still work but events won't be sent
             return
 
@@ -153,6 +155,18 @@ class XRayClient:
         """Run the asyncio event loop in background thread."""
         asyncio.set_event_loop(self._loop)
         self._loop.run_forever()
+
+    def _cleanup_thread_and_loop(self) -> None:
+        """Clean up background thread and event loop.
+
+        Used both for normal shutdown and for cleanup after failed start.
+        """
+        if self._loop is not None:
+            self._loop.call_soon_threadsafe(self._loop.stop)
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+        self._loop = None
+        self._thread = None
 
     def _atexit_shutdown(self) -> None:
         """Shutdown handler registered with atexit.
@@ -187,11 +201,7 @@ class XRayClient:
                 logger.warning("Error during X-Ray transport shutdown: %s", e)
 
             # Stop event loop and join thread
-            self._loop.call_soon_threadsafe(self._loop.stop)
-            self._thread.join(timeout=timeout)
-
-            self._loop = None
-            self._thread = None
+            self._cleanup_thread_and_loop()
 
         logger.debug("X-Ray client shutdown complete")
 
@@ -257,8 +267,8 @@ def init_xray(config: XRayConfig | None = None) -> XRayClient:
     """Initialize the global X-Ray client.
 
     Creates and starts the global client singleton. This should be called
-    once at application startup. Subsequent calls will replace the existing
-    client.
+    once at application startup. If called again, the existing client is
+    shut down first to prevent resource leaks.
 
     Args:
         config: SDK configuration. If None, loads from xray.config.yaml.
@@ -274,6 +284,10 @@ def init_xray(config: XRayConfig | None = None) -> XRayClient:
         init_xray()  # Loads from xray.config.yaml
     """
     global _client
+
+    # Shutdown existing client to prevent resource leaks (thread, event loop)
+    if _client is not None:
+        _client.shutdown()
 
     if config is None:
         config = load_config()

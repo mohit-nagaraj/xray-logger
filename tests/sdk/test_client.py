@@ -314,10 +314,16 @@ class TestGlobalFunctions:
         assert get_client() is client
 
     def test_init_xray_replaces_existing(self) -> None:
-        """init_xray replaces existing client."""
+        """init_xray shuts down existing client before replacing."""
         client1 = init_xray(XRayConfig(base_url=None))
+        assert client1.is_started
+
         client2 = init_xray(XRayConfig(base_url=None))
 
+        # Old client should be shut down (no resource leak)
+        assert not client1.is_started
+        # New client should be active
+        assert client2.is_started
         assert get_client() is client2
         assert get_client() is not client1
 
