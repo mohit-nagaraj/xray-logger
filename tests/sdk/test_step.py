@@ -6,7 +6,12 @@ from unittest.mock import Mock
 import pytest
 
 from sdk.step import (
+    LARGE_LIST_THRESHOLD,
+    LARGE_STRING_THRESHOLD,
     MAX_STRING_LENGTH,
+    PREVIEW_SIZE,
+    STRING_PREVIEW_SIZE,
+    PayloadCollector,
     Step,
     extract_candidate,
     infer_count,
@@ -184,12 +189,15 @@ class TestSummarizePayload:
         assert len(result["_candidates"]) == 1000
 
     def test_non_candidate_list(self) -> None:
+        """Small non-candidate lists now store ALL values inline."""
         items = [1, 2, 3, 4, 5]
         result = summarize_payload(items)
         assert result["_type"] == "list"
         assert result["_count"] == 5
         assert result["_item_type"] == "int"
         assert "_candidates" not in result
+        # New: small lists store all values inline
+        assert result["_values"] == [1, 2, 3, 4, 5]
 
     def test_dict_captures_keys(self) -> None:
         data = {"query": "laptop", "user_id": "u-123", "filters": {"price": 1000}}
@@ -201,14 +209,21 @@ class TestSummarizePayload:
     def test_dict_captures_scalar_values(self) -> None:
         data = {"name": "test", "count": 5, "active": True}
         result = summarize_payload(data)
-        assert result["_values"]["name"] == "test"
+        # Numbers and bools are stored directly
         assert result["_values"]["count"] == 5
         assert result["_values"]["active"] is True
+        # Strings are now recursively summarized for consistency
+        assert result["_values"]["name"]["_type"] == "str"
+        assert result["_values"]["name"]["_value"] == "test"
 
-    def test_nested_dict_shows_type(self) -> None:
+    def test_nested_dict_recursive(self) -> None:
+        """Nested dicts are now recursively summarized for full detail capture."""
         data = {"config": {"nested": "value"}}
         result = summarize_payload(data)
-        assert result["_values"]["config"] == {"_type": "dict"}
+        # Nested dict is fully summarized, not just {"_type": "dict"}
+        assert result["_values"]["config"]["_type"] == "dict"
+        assert result["_values"]["config"]["_keys"] == ["nested"]
+        assert result["_values"]["config"]["_values"]["nested"]["_value"] == "value"
 
     def test_max_depth_truncation(self) -> None:
         deep = {"l1": {"l2": {"l3": {"l4": {"l5": {"l6": "value"}}}}}}
@@ -337,3 +352,181 @@ class TestStep:
         assert start_event["input_count"] == 2
         assert start_event["input_summary"]["_type"] == "candidates"
         assert len(start_event["input_summary"]["_candidates"]) == 2
+
+
+class TestPayloadCollector:
+    """Tests for PayloadCollector class."""
+
+    def test_generates_sequential_refs(self) -> None:
+        """PayloadCollector generates sequential reference IDs."""
+        collector = PayloadCollector()
+        ref1 = collector.add("data1")
+        ref2 = collector.add("data2")
+        ref3 = collector.add("data3")
+
+        assert ref1 == "p-000"
+        assert ref2 == "p-001"
+        assert ref3 == "p-002"
+
+    def test_stores_data_by_ref(self) -> None:
+        """PayloadCollector stores data retrievable by ref."""
+        collector = PayloadCollector()
+        data = [1, 2, 3, 4, 5]
+        ref_id = collector.add(data)
+
+        payloads = collector.get_payloads()
+        assert payloads[ref_id] == data
+
+    def test_get_payloads_returns_none_when_empty(self) -> None:
+        """get_payloads returns None when no data added."""
+        collector = PayloadCollector()
+        assert collector.get_payloads() is None
+
+    def test_get_payloads_returns_dict_when_has_data(self) -> None:
+        """get_payloads returns dict when data exists."""
+        collector = PayloadCollector()
+        collector.add("some data")
+        payloads = collector.get_payloads()
+        assert isinstance(payloads, dict)
+        assert len(payloads) == 1
+
+
+class TestPayloadExternalization:
+    """Tests for payload externalization behavior."""
+
+    def test_small_list_stores_all_values_inline(self) -> None:
+        """Small lists store ALL values inline."""
+        collector = PayloadCollector()
+        items = [1, 2, 3, 4, 5]  # Small list
+        result = summarize_payload(items, collector=collector)
+
+        assert result["_type"] == "list"
+        assert result["_count"] == 5
+        assert result["_values"] == [1, 2, 3, 4, 5]
+        assert "_ref" not in result
+        assert collector.get_payloads() is None  # Nothing externalized
+
+    def test_large_list_externalized_with_preview(self) -> None:
+        """Large lists are externalized with reference + preview."""
+        collector = PayloadCollector()
+        # Create a list larger than LARGE_LIST_THRESHOLD
+        large_list = list(range(LARGE_LIST_THRESHOLD + 50))
+        result = summarize_payload(large_list, collector=collector)
+
+        assert result["_type"] == "list"
+        assert result["_count"] == LARGE_LIST_THRESHOLD + 50
+        assert "_ref" in result  # Has reference
+        assert result["_preview"] == list(range(PREVIEW_SIZE))  # First 5 items
+
+        # Data is externalized
+        payloads = collector.get_payloads()
+        assert payloads is not None
+        assert result["_ref"] in payloads
+        assert payloads[result["_ref"]] == large_list
+
+    def test_large_string_externalized_with_preview(self) -> None:
+        """Large strings are externalized with reference + preview."""
+        collector = PayloadCollector()
+        # Create a string larger than LARGE_STRING_THRESHOLD
+        large_string = "x" * (LARGE_STRING_THRESHOLD + 100)
+        result = summarize_payload(large_string, collector=collector)
+
+        assert result["_type"] == "str"
+        assert result["_length"] == LARGE_STRING_THRESHOLD + 100
+        assert "_ref" in result  # Has reference
+        assert result["_preview"] == "x" * STRING_PREVIEW_SIZE  # First 100 chars
+
+        # Data is externalized
+        payloads = collector.get_payloads()
+        assert payloads is not None
+        assert result["_ref"] in payloads
+        assert payloads[result["_ref"]] == large_string
+
+    def test_small_string_stored_inline(self) -> None:
+        """Small strings are stored inline, not externalized."""
+        collector = PayloadCollector()
+        small_string = "hello world"
+        result = summarize_payload(small_string, collector=collector)
+
+        assert result["_type"] == "str"
+        assert result["_value"] == "hello world"
+        assert "_ref" not in result
+        assert collector.get_payloads() is None
+
+    def test_nested_dict_with_large_list(self) -> None:
+        """Large lists inside dicts are externalized."""
+        collector = PayloadCollector()
+        data = {
+            "embedding": list(range(LARGE_LIST_THRESHOLD + 10)),
+            "name": "test",
+        }
+        result = summarize_payload(data, collector=collector)
+
+        # The embedding should be externalized
+        embedding_summary = result["_values"]["embedding"]
+        assert embedding_summary["_type"] == "list"
+        assert "_ref" in embedding_summary
+
+        # Payloads should contain the full list
+        payloads = collector.get_payloads()
+        assert payloads is not None
+
+    def test_without_collector_no_externalization(self) -> None:
+        """Without collector, large data is not externalized."""
+        large_list = list(range(LARGE_LIST_THRESHOLD + 50))
+        result = summarize_payload(large_list)  # No collector
+
+        assert result["_type"] == "list"
+        assert "_ref" not in result  # No reference without collector
+        assert "_values" in result  # Values stored inline
+
+
+class TestStepPayloads:
+    """Tests for Step class with _payloads."""
+
+    @pytest.fixture
+    def mock_transport(self):
+        transport = Mock()
+        transport.send = Mock(return_value=True)
+        return transport
+
+    @pytest.fixture
+    def mock_run(self):
+        run = Mock()
+        run.id = "run-123"
+        return run
+
+    def test_step_start_event_includes_payloads(self, mock_run, mock_transport) -> None:
+        """Step start event includes _payloads field."""
+        Step(mock_run, mock_transport, "test", StepType.filter, [1, 2, 3], 0)
+
+        start_event = mock_transport.send.call_args[0][0]
+        assert "_payloads" in start_event
+        # Small input, no externalization
+        assert start_event["_payloads"] is None
+
+    def test_step_start_with_large_input_has_payloads(self, mock_run, mock_transport) -> None:
+        """Step start event with large input has _payloads."""
+        large_input = list(range(LARGE_LIST_THRESHOLD + 10))
+        Step(mock_run, mock_transport, "test", StepType.filter, large_input, 0)
+
+        start_event = mock_transport.send.call_args[0][0]
+        assert start_event["_payloads"] is not None
+        assert "p-000" in start_event["_payloads"]
+
+    def test_step_end_event_includes_payloads(self, mock_run, mock_transport) -> None:
+        """Step end event includes _payloads field."""
+        step = Step(mock_run, mock_transport, "test", StepType.filter, [], 0)
+        step.end([1, 2, 3])
+
+        end_event = mock_transport.send.call_args_list[1][0][0]
+        assert "_payloads" in end_event
+
+    def test_step_end_with_large_output_has_payloads(self, mock_run, mock_transport) -> None:
+        """Step end event with large output has _payloads."""
+        step = Step(mock_run, mock_transport, "test", StepType.filter, [], 0)
+        large_output = list(range(LARGE_LIST_THRESHOLD + 10))
+        step.end(large_output)
+
+        end_event = mock_transport.send.call_args_list[1][0][0]
+        assert end_event["_payloads"] is not None

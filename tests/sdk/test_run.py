@@ -5,6 +5,7 @@ from unittest.mock import Mock
 import pytest
 
 from sdk.run import Run
+from sdk.step import LARGE_LIST_THRESHOLD
 from shared.types import RunStatus, StepType
 
 
@@ -205,3 +206,55 @@ class TestRunIntegration:
 
         assert step_end["status"] == "error"
         assert run_end["status"] == "error"
+
+
+class TestRunPayloads:
+    """Tests for Run class with _payloads."""
+
+    @pytest.fixture
+    def mock_transport(self):
+        transport = Mock()
+        transport.send = Mock(return_value=True)
+        return transport
+
+    def test_run_start_event_includes_payloads(self, mock_transport) -> None:
+        """Run start event includes _payloads field."""
+        Run(mock_transport, "test_pipeline", input_data={"query": "test"})
+
+        start_event = mock_transport.send.call_args[0][0]
+        assert "_payloads" in start_event
+        # Small input, no externalization
+        assert start_event["_payloads"] is None
+
+    def test_run_start_with_large_input_has_payloads(self, mock_transport) -> None:
+        """Run start event with large input has _payloads."""
+        large_input = {"data": list(range(LARGE_LIST_THRESHOLD + 10))}
+        Run(mock_transport, "test_pipeline", input_data=large_input)
+
+        start_event = mock_transport.send.call_args[0][0]
+        assert start_event["_payloads"] is not None
+
+    def test_run_end_event_includes_payloads(self, mock_transport) -> None:
+        """Run end event includes _payloads field."""
+        run = Run(mock_transport, "test_pipeline")
+        run.end(output={"result": "success"})
+
+        end_event = mock_transport.send.call_args_list[1][0][0]
+        assert "_payloads" in end_event
+
+    def test_run_end_with_large_output_has_payloads(self, mock_transport) -> None:
+        """Run end event with large output has _payloads."""
+        run = Run(mock_transport, "test_pipeline")
+        large_output = {"results": list(range(LARGE_LIST_THRESHOLD + 10))}
+        run.end(output=large_output)
+
+        end_event = mock_transport.send.call_args_list[1][0][0]
+        assert end_event["_payloads"] is not None
+
+    def test_run_end_with_error_includes_payloads(self, mock_transport) -> None:
+        """Run end_with_error includes _payloads field."""
+        run = Run(mock_transport, "test_pipeline")
+        run.end_with_error(ValueError("test error"), output={"partial": "result"})
+
+        end_event = mock_transport.send.call_args_list[1][0][0]
+        assert "_payloads" in end_event

@@ -18,8 +18,49 @@ MAX_STRING_LENGTH = 1024  # Truncate long strings (not IDs)
 MAX_DICT_KEYS = 50  # Max keys to extract from dicts
 MAX_PAYLOAD_DEPTH = 5  # Max recursion depth for nested structures
 
+# Payload externalization thresholds
+LARGE_LIST_THRESHOLD = 100  # Lists ≥100 items → externalize
+LARGE_STRING_THRESHOLD = 2048  # Strings ≥2KB → externalize
+PREVIEW_SIZE = 5  # Items to show in preview for large lists
+STRING_PREVIEW_SIZE = 100  # Chars to show in preview for large strings
+
 # Common ID field names to check
 ID_FIELDS = ("id", "_id", "candidate_id", "item_id", "product_id", "doc_id")
+
+
+class PayloadCollector:
+    """Collects externalized payloads during summarization.
+
+    Large data (lists ≥100 items, strings ≥2KB) are stored separately
+    and replaced with references in the summary.
+    """
+
+    def __init__(self) -> None:
+        """Initialize an empty payload collector."""
+        self._payloads: dict[str, Any] = {}
+        self._counter = 0
+
+    def add(self, data: Any) -> str:
+        """Store data and return a reference ID.
+
+        Args:
+            data: The data to store
+
+        Returns:
+            Reference ID (e.g., "p-001")
+        """
+        ref_id = f"p-{self._counter:03d}"
+        self._counter += 1
+        self._payloads[ref_id] = data
+        return ref_id
+
+    def get_payloads(self) -> dict[str, Any] | None:
+        """Return payloads dict or None if empty.
+
+        Returns:
+            Dict of payloads or None
+        """
+        return self._payloads if self._payloads else None
 
 
 def infer_count(obj: Any) -> int | None:
@@ -126,15 +167,19 @@ def _truncate_string(s: str, max_length: int = MAX_STRING_LENGTH) -> str:
     return s[:max_length] + "..."
 
 
-def summarize_payload(obj: Any, depth: int = 0) -> dict[str, Any]:
+def summarize_payload(
+    obj: Any, depth: int = 0, collector: PayloadCollector | None = None
+) -> dict[str, Any]:
     """Summarize a payload for storage.
 
     For candidate lists: Extract ALL id + score + reason (no sampling).
-    For other data: Store keys + truncated values.
+    For small data: Store ALL values inline.
+    For large data: Externalize with preview, store full data in collector.
 
     Args:
         obj: Object to summarize
         depth: Current recursion depth
+        collector: Optional PayloadCollector for storing large data
 
     Returns:
         JSON-serializable dict with summary
@@ -157,10 +202,21 @@ def summarize_payload(obj: Any, depth: int = 0) -> dict[str, Any]:
 
     # Handle strings
     if isinstance(obj, str):
-        truncated = len(obj) > MAX_STRING_LENGTH
+        length = len(obj)
+        # Large string: externalize with preview
+        if length >= LARGE_STRING_THRESHOLD and collector is not None:
+            ref_id = collector.add(obj)
+            return {
+                "_type": "str",
+                "_length": length,
+                "_ref": ref_id,
+                "_preview": obj[:STRING_PREVIEW_SIZE],
+            }
+        # Small string: store full or truncated value
+        truncated = length > MAX_STRING_LENGTH
         return {
             "_type": "str",
-            "_length": len(obj),
+            "_length": length,
             "_value": _truncate_string(obj),
             "_truncated": truncated,
         }
@@ -169,7 +225,7 @@ def summarize_payload(obj: Any, depth: int = 0) -> dict[str, Any]:
     if isinstance(obj, bytes):
         return {"_type": "bytes", "_length": len(obj)}
 
-    # Handle candidate lists specially - extract ALL ids
+    # Handle candidate lists specially - extract ALL ids (always inline)
     if is_candidate_list(obj):
         candidates = [extract_candidate(item) for item in obj]
         return {
@@ -180,18 +236,36 @@ def summarize_payload(obj: Any, depth: int = 0) -> dict[str, Any]:
 
     # Handle other lists/tuples/sets
     if isinstance(obj, (list, tuple, set, frozenset)):
-        count = len(obj)
-        result: dict[str, Any] = {
-            "_type": type(obj).__name__,
+        items = list(obj)
+        count = len(items)
+
+        # Determine item type
+        item_type = type(items[0]).__name__ if count > 0 else None
+
+        # Large list: externalize with preview
+        if count >= LARGE_LIST_THRESHOLD and collector is not None:
+            ref_id = collector.add(items)
+            result: dict[str, Any] = {
+                "_type": "list",
+                "_count": count,
+                "_ref": ref_id,
+                "_preview": items[:PREVIEW_SIZE],
+            }
+            if item_type:
+                result["_item_type"] = item_type
+            return result
+
+        # Small list: store ALL values inline
+        result = {
+            "_type": "list",
             "_count": count,
+            "_values": items,
         }
-        # For non-candidate lists, just store type info of first item
-        if count > 0:
-            first_item = list(obj)[0]
-            result["_item_type"] = type(first_item).__name__
+        if item_type:
+            result["_item_type"] = item_type
         return result
 
-    # Handle dicts
+    # Handle dicts - recursive summarization
     if isinstance(obj, dict):
         keys = list(obj.keys())[:MAX_DICT_KEYS]
         result = {
@@ -202,7 +276,7 @@ def summarize_payload(obj: Any, depth: int = 0) -> dict[str, Any]:
         if len(obj) > MAX_DICT_KEYS:
             result["_keys_truncated"] = True
 
-        # Include scalar values directly
+        # Recursively summarize values
         values: dict[str, Any] = {}
         for k in keys:
             v = obj[k]
@@ -213,9 +287,13 @@ def summarize_payload(obj: Any, depth: int = 0) -> dict[str, Any]:
             elif isinstance(v, (int, float)):
                 values[str(k)] = v
             elif isinstance(v, str):
-                values[str(k)] = _truncate_string(v)
+                # For strings in dicts, use recursive summarize
+                values[str(k)] = summarize_payload(v, depth + 1, collector)
+            elif isinstance(v, (list, tuple, set, frozenset, dict)):
+                # Recursively summarize complex nested values
+                values[str(k)] = summarize_payload(v, depth + 1, collector)
             else:
-                # For complex types, just note the type
+                # For other complex types, just note the type
                 values[str(k)] = {"_type": type(v).__name__}
         result["_values"] = values
         return result
@@ -282,12 +360,14 @@ class Step:
         self._ended_at: datetime | None = None
         self._duration_ms: int | None = None
 
-        # Input processing
-        self._input_summary = summarize_payload(input_data)
+        # Input processing - use collector for large data externalization
+        self._input_collector = PayloadCollector()
+        self._input_summary = summarize_payload(input_data, collector=self._input_collector)
         self._input_count = infer_count(input_data)
 
         # Output (set on end)
         self._output_summary: dict[str, Any] | None = None
+        self._output_payloads: dict[str, Any] | None = None
         self._output_count: int | None = None
         self._status: StepStatus = StepStatus.running
         self._error_message: str | None = None
@@ -350,7 +430,11 @@ class Step:
         self._duration_ms = (end_time_ns - self._start_time_ns) // 1_000_000
 
         self._status = StepStatus(status) if isinstance(status, str) else status
-        self._output_summary = summarize_payload(output)
+
+        # Use collector for large data externalization
+        output_collector = PayloadCollector()
+        self._output_summary = summarize_payload(output, collector=output_collector)
+        self._output_payloads = output_collector.get_payloads()
         self._output_count = infer_count(output)
 
         self._send_end_event()
@@ -389,6 +473,7 @@ class Step:
             "input_summary": self._input_summary,
             "input_count": self._input_count,
             "metadata": self._metadata if self._metadata else None,
+            "_payloads": self._input_collector.get_payloads(),
         }
         self._transport.send(event)
 
@@ -405,5 +490,6 @@ class Step:
             "output_count": self._output_count,
             "reasoning": self._reasoning if self._reasoning else None,
             "error_message": self._error_message,
+            "_payloads": self._output_payloads,
         }
         self._transport.send(event)

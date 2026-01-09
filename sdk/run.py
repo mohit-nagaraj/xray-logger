@@ -8,7 +8,7 @@ from typing import Any
 
 from shared.types import RunStatus, StepType
 
-from .step import Step, summarize_payload
+from .step import PayloadCollector, Step, summarize_payload
 from .transport import Transport
 
 
@@ -47,9 +47,15 @@ class Run:
         self._started_at = datetime.now(timezone.utc)
         self._ended_at: datetime | None = None
 
-        # Input/output
-        self._input_summary = summarize_payload(input_data) if input_data else None
+        # Input/output - use collector for large data externalization
+        self._input_collector = PayloadCollector()
+        self._input_summary = (
+            summarize_payload(input_data, collector=self._input_collector)
+            if input_data
+            else None
+        )
         self._output_summary: dict[str, Any] | None = None
+        self._output_payloads: dict[str, Any] | None = None
 
         # Status
         self._status: RunStatus = RunStatus.running
@@ -131,7 +137,9 @@ class Run:
         self._status = RunStatus(status) if isinstance(status, str) else status
 
         if output is not None:
-            self._output_summary = summarize_payload(output)
+            output_collector = PayloadCollector()
+            self._output_summary = summarize_payload(output, collector=output_collector)
+            self._output_payloads = output_collector.get_payloads()
 
         self._send_end_event()
 
@@ -154,7 +162,9 @@ class Run:
             self._error_message = str(error)
 
         if output is not None:
-            self._output_summary = summarize_payload(output)
+            output_collector = PayloadCollector()
+            self._output_summary = summarize_payload(output, collector=output_collector)
+            self._output_payloads = output_collector.get_payloads()
 
         self._send_end_event()
 
@@ -184,6 +194,7 @@ class Run:
             "status": self._status.value,
             "started_at": self._started_at.isoformat(),
             "input_summary": self._input_summary,
+            "_payloads": self._input_collector.get_payloads(),
         }
 
         # Add metadata fields (flatten common ones for indexing)
@@ -205,5 +216,6 @@ class Run:
             "ended_at": self._ended_at.isoformat() if self._ended_at else None,
             "output_summary": self._output_summary,
             "error_message": self._error_message,
+            "_payloads": self._output_payloads,
         }
         self._transport.send(event)
