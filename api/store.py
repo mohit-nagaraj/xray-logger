@@ -284,7 +284,8 @@ async def list_runs(
     Returns:
         List of Run records (without steps loaded).
     """
-    stmt = select(Run).order_by(Run.started_at.desc())
+    # Secondary sort on id ensures deterministic pagination when timestamps match
+    stmt = select(Run).order_by(Run.started_at.desc(), Run.id)
 
     if pipeline_name is not None:
         stmt = stmt.where(Run.pipeline_name == pipeline_name)
@@ -327,7 +328,8 @@ async def list_steps(
     Returns:
         List of Step records.
     """
-    stmt = select(Step).order_by(Step.started_at.desc())
+    # Secondary sort on id ensures deterministic pagination when timestamps match
+    stmt = select(Step).order_by(Step.started_at.desc(), Step.id)
 
     if run_id is not None:
         stmt = stmt.where(Step.run_id == run_id)
