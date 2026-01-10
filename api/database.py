@@ -50,27 +50,36 @@ async def init_db(config: APIConfig) -> None:
 
     Raises:
         RuntimeError: If called when database is already initialized.
+        Exception: Re-raises any exception from engine creation or table creation,
+                   after cleaning up globals to leave module in consistent state.
     """
     global _engine, _session_factory
 
     if _engine is not None:
         raise RuntimeError("Database already initialized. Call close_db() first.")
 
-    _engine = create_async_engine(
+    engine = create_async_engine(
         config.database_url,
         echo=config.debug,
         pool_pre_ping=True,  # Verify connections before use
     )
 
-    _session_factory = async_sessionmaker(
-        _engine,
-        class_=AsyncSession,
-        expire_on_commit=False,  # Keep objects usable after commit
-    )
+    try:
+        # Create tables if they don't exist
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
-    # Create tables if they don't exist
-    async with _engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        # Only set globals after successful table creation
+        _engine = engine
+        _session_factory = async_sessionmaker(
+            _engine,
+            class_=AsyncSession,
+            expire_on_commit=False,  # Keep objects usable after commit
+        )
+    except Exception:
+        # Clean up engine on failure to leave module in consistent state
+        await engine.dispose()
+        raise
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

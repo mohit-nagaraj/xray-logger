@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import JSON, ForeignKey, Index, String, Text
+from sqlalchemy import JSON, ForeignKey, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
@@ -191,6 +191,27 @@ class Payload(Base):
         Index("ix_payloads_run_id", "run_id"),
         Index("ix_payloads_step_id", "step_id"),
         Index("ix_payloads_ref_id", "ref_id"),
-        # Composite unique constraint for efficient lookup
-        Index("ix_payloads_lookup", "run_id", "step_id", "ref_id", "phase", unique=True),
+        # Two partial indexes for uniqueness - handles NULL step_id correctly
+        # (NULL != NULL in SQL, so a single composite index won't enforce uniqueness)
+        # 1. For step-level payloads (step_id IS NOT NULL)
+        Index(
+            "ix_payloads_step_lookup",
+            "run_id",
+            "step_id",
+            "ref_id",
+            "phase",
+            unique=True,
+            postgresql_where=text("step_id IS NOT NULL"),
+            sqlite_where=text("step_id IS NOT NULL"),
+        ),
+        # 2. For run-level payloads (step_id IS NULL)
+        Index(
+            "ix_payloads_run_lookup",
+            "run_id",
+            "ref_id",
+            "phase",
+            unique=True,
+            postgresql_where=text("step_id IS NULL"),
+            sqlite_where=text("step_id IS NULL"),
+        ),
     )

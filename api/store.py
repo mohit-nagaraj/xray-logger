@@ -368,8 +368,8 @@ async def create_payloads(
         created.append(payload)
 
     await session.commit()
-    for p in created:
-        await session.refresh(p)
+    # No refresh needed - expire_on_commit=False keeps objects usable
+    # and auto-generated IDs are populated after flush
     return created
 
 
