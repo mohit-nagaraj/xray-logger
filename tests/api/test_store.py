@@ -869,3 +869,61 @@ class TestGetPayloads:
         fetched = await store.get_payloads(session, run_id=run_id, ref_id="p-001")
         assert len(fetched) == 1
         assert fetched[0].data == [1, 2]
+
+    async def test_get_payloads_filter_run_level_vs_step_level(
+        self, session: AsyncSession
+    ) -> None:
+        """get_payloads correctly distinguishes run-level vs step-level payloads."""
+        run_id = uuid4()
+        await store.create_run(
+            session,
+            id=run_id,
+            pipeline_name="test",
+            status="running",
+            started_at=datetime.now(timezone.utc),
+        )
+
+        step_id = uuid4()
+        await store.create_step(
+            session,
+            id=step_id,
+            run_id=run_id,
+            step_name="filter",
+            step_type="filter",
+            index=0,
+            started_at=datetime.now(timezone.utc),
+        )
+
+        # Create run-level payload (step_id=None)
+        await store.create_payloads(
+            session,
+            run_id=run_id,
+            step_id=None,
+            phase="input",
+            payloads={"run-payload": "run-level data"},
+        )
+
+        # Create step-level payload
+        await store.create_payloads(
+            session,
+            run_id=run_id,
+            step_id=step_id,
+            phase="output",
+            payloads={"step-payload": "step-level data"},
+        )
+
+        # Default (no step_id arg) → returns ALL payloads
+        all_payloads = await store.get_payloads(session, run_id=run_id)
+        assert len(all_payloads) == 2
+
+        # step_id=None explicitly → returns only run-level payloads
+        run_level = await store.get_payloads(session, run_id=run_id, step_id=None)
+        assert len(run_level) == 1
+        assert run_level[0].ref_id == "run-payload"
+        assert run_level[0].step_id is None
+
+        # step_id=<uuid> → returns only that step's payloads
+        step_level = await store.get_payloads(session, run_id=run_id, step_id=step_id)
+        assert len(step_level) == 1
+        assert step_level[0].ref_id == "step-payload"
+        assert step_level[0].step_id == step_id

@@ -14,6 +14,7 @@ Design decisions:
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum, auto
 from typing import Any
 from uuid import UUID
 
@@ -22,6 +23,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from .models import Payload, Run, Step
+
+
+class _Unset(Enum):
+    """Sentinel to distinguish 'not provided' from 'explicitly None'."""
+
+    UNSET = auto()
+
+
+UNSET = _Unset.UNSET
 
 
 async def create_run(
@@ -377,7 +387,7 @@ async def get_payloads(
     session: AsyncSession,
     *,
     run_id: UUID,
-    step_id: UUID | None = None,
+    step_id: UUID | None | _Unset = UNSET,
     phase: str | None = None,
     ref_id: str | None = None,
 ) -> list[Payload]:
@@ -386,7 +396,10 @@ async def get_payloads(
     Args:
         session: Database session
         run_id: Parent Run UUID
-        step_id: Filter by step ID (None for run-level payloads)
+        step_id: Filter by step ID. Three behaviors:
+            - UNSET (default): Return all payloads (run-level + step-level)
+            - None: Return only run-level payloads (step_id IS NULL)
+            - UUID: Return only payloads for that specific step
         phase: Filter by phase ("input" or "output")
         ref_id: Filter by specific reference ID
 
@@ -395,8 +408,15 @@ async def get_payloads(
     """
     stmt = select(Payload).where(Payload.run_id == run_id)
 
-    if step_id is not None:
-        stmt = stmt.where(Payload.step_id == step_id)
+    if step_id is not UNSET:
+        if step_id is None:
+            # Explicitly None → filter for run-level payloads (step_id IS NULL)
+            stmt = stmt.where(Payload.step_id.is_(None))
+        else:
+            # UUID provided → filter for that specific step
+            stmt = stmt.where(Payload.step_id == step_id)
+    # If UNSET, don't filter by step_id → return all payloads
+
     if phase is not None:
         stmt = stmt.where(Payload.phase == phase)
     if ref_id is not None:
