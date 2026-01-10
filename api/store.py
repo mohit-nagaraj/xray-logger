@@ -130,6 +130,7 @@ async def create_step(
     step_type: str,
     index: int,
     started_at: datetime,
+    status: str = "running",
     input_summary: dict[str, Any] | None = None,
     input_count: int | None = None,
     metadata: dict[str, Any] | None = None,
@@ -146,6 +147,7 @@ async def create_step(
         step_type: Type of step (filter, rank, llm, etc.)
         index: Step order within run (0-based)
         started_at: When the step started
+        status: Initial status (default "running")
         input_summary: Summarized input data
         input_count: Number of input items
         metadata: Additional step metadata
@@ -160,6 +162,7 @@ async def create_step(
         step_type=step_type,
         index=index,
         started_at=started_at,
+        status=status,
         input_summary=input_summary,
         input_count=input_count,
         metadata_=metadata,

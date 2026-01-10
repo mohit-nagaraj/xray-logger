@@ -4,10 +4,18 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from api.models import Base, Run, Step
 from api import store
+from api.models import Base, Run, Step
+
+
+def _enable_sqlite_fk(dbapi_conn, connection_record):
+    """Enable foreign key support in SQLite."""
+    cursor = dbapi_conn.cursor()
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.close()
 
 
 @pytest.fixture
@@ -17,6 +25,9 @@ async def engine():
         "sqlite+aiosqlite:///:memory:",
         echo=False,
     )
+    # Enable foreign key enforcement in SQLite
+    event.listen(engine.sync_engine, "connect", _enable_sqlite_fk)
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield engine
@@ -202,6 +213,7 @@ class TestCreateStep:
         assert step.step_name == "filter_step"
         assert step.step_type == "filter"
         assert step.index == 0
+        assert step.status == "running"  # Default status
 
     async def test_create_step_with_all_fields(self, session: AsyncSession) -> None:
         """create_step creates a step with all fields."""
