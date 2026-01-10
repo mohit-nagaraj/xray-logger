@@ -79,7 +79,7 @@ async def create_run(
     )
     session.add(run)
     await session.commit()
-    await session.refresh(run)
+    # No refresh needed - expire_on_commit=False keeps objects usable
     return run
 
 
@@ -117,7 +117,6 @@ async def end_run(
     run.error_message = error_message
 
     await session.commit()
-    await session.refresh(run)
     return run
 
 
@@ -169,7 +168,6 @@ async def create_step(
     )
     session.add(step)
     await session.commit()
-    await session.refresh(step)
     return step
 
 
@@ -216,7 +214,6 @@ async def end_step(
     step.error_message = error_message
 
     await session.commit()
-    await session.refresh(step)
     return step
 
 

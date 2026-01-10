@@ -123,8 +123,8 @@ async def close_db() -> None:
         _session_factory = None
 
 
-def get_engine() -> AsyncEngine | None:
-    """Get the database engine (for testing/advanced use).
+def _get_engine() -> AsyncEngine | None:
+    """Get the database engine (internal/testing use).
 
     Returns:
         The async engine, or None if not initialized.
