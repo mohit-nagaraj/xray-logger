@@ -7,8 +7,12 @@ maintain temporal dependencies (run before step, start before end).
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 from . import store
 from .database import get_session
@@ -59,6 +63,9 @@ async def ingest_events(
                 )
             )
         except Exception as e:
+            logger.exception(
+                "Error processing event %s of type %s", event.id, event.event_type
+            )
             results.append(
                 EventResult(
                     id=event.id,
@@ -103,6 +110,7 @@ async def _handle_run_start(session: AsyncSession, event: RunStartEvent) -> None
     """Handle run_start event - creates a new Run record.
 
     Also stores any externalized payloads from the _payloads field.
+    Payload failures are logged but don't fail the event (run is already saved).
     """
     await store.create_run(
         session,
@@ -118,14 +126,18 @@ async def _handle_run_start(session: AsyncSession, event: RunStartEvent) -> None
     )
 
     # Store externalized payloads if present
+    # Failures are logged but don't fail the event (run is already committed)
     if event.payloads:
-        await store.create_payloads(
-            session,
-            run_id=event.id,
-            step_id=None,  # Run-level payloads
-            phase="input",
-            payloads=event.payloads,
-        )
+        try:
+            await store.create_payloads(
+                session,
+                run_id=event.id,
+                step_id=None,  # Run-level payloads
+                phase="input",
+                payloads=event.payloads,
+            )
+        except Exception:
+            logger.exception("Failed to store payloads for run %s", event.id)
 
 
 async def _handle_run_end(session: AsyncSession, event: RunEndEvent) -> None:
@@ -147,20 +159,25 @@ async def _handle_run_end(session: AsyncSession, event: RunEndEvent) -> None:
         raise ValueError(f"Run {event.id} not found")
 
     # Store externalized payloads if present
+    # Failures are logged but don't fail the event (run is already committed)
     if event.payloads:
-        await store.create_payloads(
-            session,
-            run_id=event.id,
-            step_id=None,  # Run-level payloads
-            phase="output",
-            payloads=event.payloads,
-        )
+        try:
+            await store.create_payloads(
+                session,
+                run_id=event.id,
+                step_id=None,  # Run-level payloads
+                phase="output",
+                payloads=event.payloads,
+            )
+        except Exception:
+            logger.exception("Failed to store payloads for run %s", event.id)
 
 
 async def _handle_step_start(session: AsyncSession, event: StepStartEvent) -> None:
     """Handle step_start event - creates a new Step record.
 
     Also stores any externalized payloads from the _payloads field.
+    Payload failures are logged but don't fail the event (step is already saved).
     """
     await store.create_step(
         session,
@@ -177,14 +194,18 @@ async def _handle_step_start(session: AsyncSession, event: StepStartEvent) -> No
     )
 
     # Store externalized payloads if present
+    # Failures are logged but don't fail the event (step is already committed)
     if event.payloads:
-        await store.create_payloads(
-            session,
-            run_id=event.run_id,
-            step_id=event.id,
-            phase="input",
-            payloads=event.payloads,
-        )
+        try:
+            await store.create_payloads(
+                session,
+                run_id=event.run_id,
+                step_id=event.id,
+                phase="input",
+                payloads=event.payloads,
+            )
+        except Exception:
+            logger.exception("Failed to store payloads for step %s", event.id)
 
 
 async def _handle_step_end(session: AsyncSession, event: StepEndEvent) -> None:
@@ -209,11 +230,16 @@ async def _handle_step_end(session: AsyncSession, event: StepEndEvent) -> None:
         raise ValueError(f"Step {event.id} not found")
 
     # Store externalized payloads if present
+    # Use result.run_id (verified from DB) instead of event.run_id for data consistency
+    # Failures are logged but don't fail the event (step is already committed)
     if event.payloads:
-        await store.create_payloads(
-            session,
-            run_id=event.run_id,
-            step_id=event.id,
-            phase="output",
-            payloads=event.payloads,
-        )
+        try:
+            await store.create_payloads(
+                session,
+                run_id=result.run_id,  # Use verified run_id from database
+                step_id=event.id,
+                phase="output",
+                payloads=event.payloads,
+            )
+        except Exception:
+            logger.exception("Failed to store payloads for step %s", event.id)

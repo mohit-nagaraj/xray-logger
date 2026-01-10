@@ -1,7 +1,10 @@
 """Tests for API routes (/ingest endpoint)."""
 
-from datetime import datetime, timezone
 from uuid import uuid4
+
+# Fixed timestamps for deterministic tests
+FIXED_START_TIME = "2024-01-15T10:00:00Z"
+FIXED_END_TIME = "2024-01-15T10:01:00Z"
 
 import pytest
 from fastapi.testclient import TestClient
@@ -95,7 +98,7 @@ class TestIngestRunStart:
             "id": str(uuid4()),
             "pipeline_name": "test_pipeline",
             "status": "running",
-            "started_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": FIXED_START_TIME,
         }
         response = client.post("/ingest", json=[event])
         assert response.status_code == 200
@@ -111,7 +114,7 @@ class TestIngestRunStart:
             "id": str(uuid4()),
             "pipeline_name": "recommendation_pipeline",
             "status": "running",
-            "started_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": FIXED_START_TIME,
             "input_summary": {"query": "test", "_count": 10},
             "metadata": {"custom_field": "value"},
             "request_id": "req-123",
@@ -129,7 +132,7 @@ class TestIngestRunStart:
             "id": str(uuid4()),
             "pipeline_name": "test",
             "status": "running",
-            "started_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": FIXED_START_TIME,
             "_payloads": {
                 "p-001": list(range(100)),
                 "p-002": "x" * 2000,
@@ -153,7 +156,7 @@ class TestIngestRunEnd:
             "id": run_id,
             "pipeline_name": "test",
             "status": "running",
-            "started_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": FIXED_START_TIME,
         }
         client.post("/ingest", json=[start_event])
 
@@ -162,7 +165,7 @@ class TestIngestRunEnd:
             "event_type": "run_end",
             "id": run_id,
             "status": "success",
-            "ended_at": datetime.now(timezone.utc).isoformat(),
+            "ended_at": FIXED_END_TIME,
             "output_summary": {"result": "done"},
         }
         response = client.post("/ingest", json=[end_event])
@@ -178,7 +181,7 @@ class TestIngestRunEnd:
             "id": run_id,
             "pipeline_name": "test",
             "status": "running",
-            "started_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": FIXED_START_TIME,
         }
         client.post("/ingest", json=[start_event])
 
@@ -186,7 +189,7 @@ class TestIngestRunEnd:
             "event_type": "run_end",
             "id": run_id,
             "status": "error",
-            "ended_at": datetime.now(timezone.utc).isoformat(),
+            "ended_at": FIXED_END_TIME,
             "error_message": "Something went wrong",
         }
         response = client.post("/ingest", json=[end_event])
@@ -199,7 +202,7 @@ class TestIngestRunEnd:
             "event_type": "run_end",
             "id": str(uuid4()),
             "status": "success",
-            "ended_at": datetime.now(timezone.utc).isoformat(),
+            "ended_at": FIXED_END_TIME,
         }
         response = client.post("/ingest", json=[event])
         assert response.status_code == 200
@@ -223,7 +226,7 @@ class TestIngestStepStart:
             "id": run_id,
             "pipeline_name": "test",
             "status": "running",
-            "started_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": FIXED_START_TIME,
         }
         client.post("/ingest", json=[start_event])
 
@@ -235,7 +238,7 @@ class TestIngestStepStart:
             "step_name": "filter_step",
             "step_type": "filter",
             "index": 0,
-            "started_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": FIXED_START_TIME,
             "input_summary": {"items": 100},
             "input_count": 100,
         }
@@ -252,7 +255,7 @@ class TestIngestStepStart:
             "step_name": "orphan_step",
             "step_type": "filter",
             "index": 0,
-            "started_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": FIXED_START_TIME,
         }
         response = client.post("/ingest", json=[event])
         assert response.status_code == 200
@@ -275,7 +278,7 @@ class TestIngestStepEnd:
                 "id": run_id,
                 "pipeline_name": "test",
                 "status": "running",
-                "started_at": datetime.now(timezone.utc).isoformat(),
+                "started_at": FIXED_START_TIME,
             },
             {
                 "event_type": "step_start",
@@ -284,7 +287,7 @@ class TestIngestStepEnd:
                 "step_name": "filter",
                 "step_type": "filter",
                 "index": 0,
-                "started_at": datetime.now(timezone.utc).isoformat(),
+                "started_at": FIXED_START_TIME,
             },
         ]
         client.post("/ingest", json=events)
@@ -295,7 +298,7 @@ class TestIngestStepEnd:
             "id": step_id,
             "run_id": run_id,
             "status": "success",
-            "ended_at": datetime.now(timezone.utc).isoformat(),
+            "ended_at": FIXED_END_TIME,
             "duration_ms": 150,
             "output_summary": {"items": 50},
             "output_count": 50,
@@ -315,7 +318,7 @@ class TestIngestStepEnd:
                 "id": run_id,
                 "pipeline_name": "test",
                 "status": "running",
-                "started_at": datetime.now(timezone.utc).isoformat(),
+                "started_at": FIXED_START_TIME,
             },
             {
                 "event_type": "step_start",
@@ -324,7 +327,7 @@ class TestIngestStepEnd:
                 "step_name": "rank",
                 "step_type": "rank",
                 "index": 0,
-                "started_at": datetime.now(timezone.utc).isoformat(),
+                "started_at": FIXED_START_TIME,
             },
         ]
         client.post("/ingest", json=events)
@@ -334,7 +337,7 @@ class TestIngestStepEnd:
             "id": step_id,
             "run_id": run_id,
             "status": "success",
-            "ended_at": datetime.now(timezone.utc).isoformat(),
+            "ended_at": FIXED_END_TIME,
             "reasoning": {
                 "algorithm": "bm25",
                 "top_scores": [0.95, 0.87, 0.72],
@@ -351,7 +354,7 @@ class TestIngestStepEnd:
             "id": str(uuid4()),
             "run_id": str(uuid4()),
             "status": "success",
-            "ended_at": datetime.now(timezone.utc).isoformat(),
+            "ended_at": FIXED_END_TIME,
         }
         response = client.post("/ingest", json=[event])
         assert response.status_code == 200
@@ -442,7 +445,7 @@ class TestIngestFullLifecycle:
                 "id": run_id,
                 "pipeline_name": "test",
                 "status": "running",
-                "started_at": datetime.now(timezone.utc).isoformat(),
+                "started_at": FIXED_START_TIME,
             },
             # Invalid: step_end for non-existent step
             {
@@ -450,14 +453,14 @@ class TestIngestFullLifecycle:
                 "id": str(uuid4()),
                 "run_id": run_id,
                 "status": "success",
-                "ended_at": datetime.now(timezone.utc).isoformat(),
+                "ended_at": FIXED_END_TIME,
             },
             # Valid: run_end
             {
                 "event_type": "run_end",
                 "id": run_id,
                 "status": "success",
-                "ended_at": datetime.now(timezone.utc).isoformat(),
+                "ended_at": FIXED_END_TIME,
             },
         ]
 
@@ -493,7 +496,7 @@ class TestIngestValidation:
             "id": "not-a-uuid",
             "pipeline_name": "test",
             "status": "running",
-            "started_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": FIXED_START_TIME,
         }
         response = client.post("/ingest", json=[event])
         assert response.status_code == 422
@@ -515,7 +518,7 @@ class TestIngestValidation:
             "id": str(uuid4()),
             "pipeline_name": "test",
             "status": "invalid_status",  # Should be "running"
-            "started_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": FIXED_START_TIME,
         }
         response = client.post("/ingest", json=[event])
         assert response.status_code == 422
@@ -534,7 +537,7 @@ class TestIngestPayloads:
             "id": str(run_id),
             "pipeline_name": "test",
             "status": "running",
-            "started_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": FIXED_START_TIME,
             "_payloads": {
                 "p-001": list(range(50)),
                 "p-002": {"nested": "data"},
@@ -566,7 +569,7 @@ class TestIngestPayloads:
                 "id": str(run_id),
                 "pipeline_name": "test",
                 "status": "running",
-                "started_at": datetime.now(timezone.utc).isoformat(),
+                "started_at": FIXED_START_TIME,
             },
             {
                 "event_type": "step_start",
@@ -575,7 +578,7 @@ class TestIngestPayloads:
                 "step_name": "process",
                 "step_type": "transform",
                 "index": 0,
-                "started_at": datetime.now(timezone.utc).isoformat(),
+                "started_at": FIXED_START_TIME,
                 "_payloads": {"p-input": [1, 2, 3]},
             },
             {
@@ -583,7 +586,7 @@ class TestIngestPayloads:
                 "id": str(step_id),
                 "run_id": str(run_id),
                 "status": "success",
-                "ended_at": datetime.now(timezone.utc).isoformat(),
+                "ended_at": FIXED_END_TIME,
                 "_payloads": {"p-output": [4, 5, 6]},
             },
         ]
