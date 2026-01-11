@@ -74,8 +74,8 @@ def step(
                     # No active run - execute without instrumentation
                     return await func(*args, **kwargs)
 
-                # Create step with first positional arg as input (if any)
-                input_data = args[0] if args else None
+                # Capture all args and kwargs as input data
+                input_data = {"args": args, "kwargs": kwargs} if args or kwargs else None
                 step_obj = run.start_step(step_name, step_type, input_data)
 
                 try:
@@ -96,8 +96,8 @@ def step(
                     # No active run - execute without instrumentation
                     return func(*args, **kwargs)
 
-                # Create step with first positional arg as input (if any)
-                input_data = args[0] if args else None
+                # Capture all args and kwargs as input data
+                input_data = {"args": args, "kwargs": kwargs} if args or kwargs else None
                 step_obj = run.start_step(step_name, step_type, input_data)
 
                 try:
@@ -159,6 +159,19 @@ def instrument_class(
                 continue
             # Skip excluded methods
             if attr_name in exclude:
+                continue
+
+            # Get the raw attribute from class __dict__ to check for descriptors
+            # This preserves staticmethod/classmethod detection
+            raw_attr = None
+            for klass in cls.__mro__:
+                if attr_name in klass.__dict__:
+                    raw_attr = klass.__dict__[attr_name]
+                    break
+
+            # Skip staticmethod and classmethod - they have different calling conventions
+            # and wrapping them would break their behavior
+            if isinstance(raw_attr, (staticmethod, classmethod)):
                 continue
 
             attr = getattr(cls, attr_name)
@@ -239,12 +252,18 @@ def attach_candidates(
     if step_obj is None:
         return False
 
-    # Extract candidate info
+    # Extract candidate info using key existence check (not truthiness)
+    # to handle falsy IDs like 0 or ""
     candidate_info = []
     for c in candidates:
-        info: dict[str, Any] = {
-            "id": c.get("id") or c.get("_id") or c.get("candidate_id")
-        }
+        # Find ID using first existing key (handles falsy values correctly)
+        id_val = None
+        for key in ("id", "_id", "candidate_id"):
+            if key in c:
+                id_val = c[key]
+                break
+
+        info: dict[str, Any] = {"id": id_val}
         if "score" in c:
             info["score"] = c["score"]
         if "reason" in c:

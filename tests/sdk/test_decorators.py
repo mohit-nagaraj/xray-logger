@@ -83,21 +83,22 @@ class TestStepDecoratorSync:
     def test_decorated_sync_captures_input_output(
         self, client: XRayClient, mock_transport: Mock
     ) -> None:
-        """Decorated sync function captures first arg as input and return as output."""
+        """Decorated sync function captures all args/kwargs as input and return as output."""
 
         @step(step_type="transform")
-        def double_values(items: list[int]) -> list[int]:
-            return [i * 2 for i in items]
+        def double_values(items: list[int], multiplier: int = 2) -> list[int]:
+            return [i * multiplier for i in items]
 
         with client.start_run("test_pipeline"):
-            result = double_values([1, 2, 3])
+            result = double_values([1, 2, 3], multiplier=3)
 
-        assert result == [2, 4, 6]
+        assert result == [3, 6, 9]
 
-        # Check step_start has input
+        # Check step_start has input with args and kwargs
         step_start = mock_transport.send.call_args_list[1][0][0]
         assert step_start["input_summary"] is not None
-        assert step_start["input_count"] == 3
+        # Input is now {"args": ..., "kwargs": ...}
+        assert step_start["input_summary"]["_type"] == "dict"
 
         # Check step_end has output
         step_end = mock_transport.send.call_args_list[2][0][0]
@@ -221,7 +222,7 @@ class TestStepDecoratorSync:
 
         assert result == "result"
 
-        # When no args, input_data is None which gets summarized
+        # When no args/kwargs, input_data is None
         step_start = mock_transport.send.call_args_list[1][0][0]
         assert step_start["input_summary"]["_type"] == "null"
         assert step_start["input_summary"]["_value"] is None
@@ -505,6 +506,46 @@ class TestInstrumentClass:
         assert result == 6
         assert mock_transport.send.call_count == 4
 
+    def test_skips_staticmethod_and_classmethod(
+        self, client: XRayClient, mock_transport: Mock
+    ) -> None:
+        """instrument_class skips staticmethod and classmethod to avoid breaking them."""
+
+        @instrument_class(step_type="transform")
+        class MyClass:
+            def regular_method(self, x: int) -> int:
+                return x + 1
+
+            @staticmethod
+            def static_method(x: int) -> int:
+                return x * 2
+
+            @classmethod
+            def class_method(cls, x: int) -> int:
+                return x * 3
+
+        obj = MyClass()
+
+        # All methods should work correctly
+        assert obj.regular_method(5) == 6
+        assert obj.static_method(5) == 10
+        assert MyClass.static_method(5) == 10
+        assert obj.class_method(5) == 15
+        assert MyClass.class_method(5) == 15
+
+        # Only regular_method should be instrumented
+        mock_transport.send.reset_mock()
+        with client.start_run("test_pipeline"):
+            obj.regular_method(5)
+            obj.static_method(5)
+            obj.class_method(5)
+
+        # run_start + step_start + step_end + run_end = 4 (only regular_method instrumented)
+        assert mock_transport.send.call_count == 4
+
+        step_start = mock_transport.send.call_args_list[1][0][0]
+        assert step_start["step_name"] == "regular_method"
+
 
 class TestAttachReasoning:
     """Tests for attach_reasoning helper."""
@@ -703,6 +744,56 @@ class TestAttachCandidates:
 
         step_end = mock_transport.send.call_args_list[2][0][0]
         assert step_end["reasoning"]["output_candidates"][0]["id"] == "mongo_id"
+
+        # Test candidate_id
+        mock_transport.send.reset_mock()
+        with client.start_run("test_pipeline"):
+            process_items([{"candidate_id": "cand_123", "score": 0.7}])
+
+        step_end = mock_transport.send.call_args_list[2][0][0]
+        assert step_end["reasoning"]["output_candidates"][0]["id"] == "cand_123"
+
+    def test_attach_candidates_id_precedence(
+        self, client: XRayClient, mock_transport: Mock
+    ) -> None:
+        """attach_candidates uses id field first when multiple ID fields present."""
+
+        @step(step_type="filter")
+        def process_items(items: list[dict]) -> list[dict]:
+            attach_candidates(items, phase="output")
+            return items
+
+        # When both id and _id are present, id takes precedence
+        with client.start_run("test_pipeline"):
+            process_items([{"id": "primary", "_id": "secondary", "candidate_id": "tertiary"}])
+
+        step_end = mock_transport.send.call_args_list[2][0][0]
+        assert step_end["reasoning"]["output_candidates"][0]["id"] == "primary"
+
+    def test_attach_candidates_handles_falsy_ids(
+        self, client: XRayClient, mock_transport: Mock
+    ) -> None:
+        """attach_candidates correctly handles falsy ID values like 0 or empty string."""
+
+        @step(step_type="filter")
+        def process_items(items: list[dict]) -> list[dict]:
+            attach_candidates(items, phase="output")
+            return items
+
+        # Test with ID = 0 (falsy but valid)
+        with client.start_run("test_pipeline"):
+            process_items([{"id": 0, "score": 0.5}])
+
+        step_end = mock_transport.send.call_args_list[2][0][0]
+        assert step_end["reasoning"]["output_candidates"][0]["id"] == 0
+
+        # Test with ID = "" (falsy but valid)
+        mock_transport.send.reset_mock()
+        with client.start_run("test_pipeline"):
+            process_items([{"id": "", "score": 0.5}])
+
+        step_end = mock_transport.send.call_args_list[2][0][0]
+        assert step_end["reasoning"]["output_candidates"][0]["id"] == ""
 
     def test_attach_candidates_phase_parameter(
         self, client: XRayClient, mock_transport: Mock
