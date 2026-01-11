@@ -9,6 +9,12 @@ from .client import (
     shutdown_xray,
 )
 from .config import XRayConfig, load_config
+from .decorators import (
+    attach_candidates,
+    attach_reasoning,
+    instrument_class,
+    step,
+)
 from .run import Run
 from .step import (
     LARGE_LIST_THRESHOLD,
@@ -33,6 +39,12 @@ __all__ = [
     # Configuration
     "XRayConfig",
     "load_config",
+    # Decorators
+    "step",
+    "instrument_class",
+    # Helpers
+    "attach_reasoning",
+    "attach_candidates",
     # Core classes
     "Transport",
     "Run",
