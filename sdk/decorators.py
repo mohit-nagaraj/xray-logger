@@ -86,6 +86,8 @@ def step(
                     step_obj.end_with_error(e)
                     raise
 
+            # Mark as step-decorated to prevent double instrumentation
+            async_wrapper._xray_step_decorated = True  # type: ignore[attr-defined]
             return async_wrapper  # type: ignore[return-value]
         else:
 
@@ -108,6 +110,8 @@ def step(
                     step_obj.end_with_error(e)
                     raise
 
+            # Mark as step-decorated to prevent double instrumentation
+            sync_wrapper._xray_step_decorated = True  # type: ignore[attr-defined]
             return sync_wrapper  # type: ignore[return-value]
 
     return decorator
@@ -177,6 +181,9 @@ def instrument_class(
             attr = getattr(cls, attr_name)
             # Only instrument callable attributes that aren't classes
             if callable(attr) and not isinstance(attr, type):
+                # Skip if already decorated with @step to prevent double instrumentation
+                if getattr(attr, "_xray_step_decorated", False):
+                    continue
                 # Apply @step decorator
                 decorated = step(name=attr_name, step_type=step_type)(attr)
                 setattr(cls, attr_name, decorated)

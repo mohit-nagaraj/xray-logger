@@ -546,6 +546,41 @@ class TestInstrumentClass:
         step_start = mock_transport.send.call_args_list[1][0][0]
         assert step_start["step_name"] == "regular_method"
 
+    def test_skips_already_decorated_methods(
+        self, client: XRayClient, mock_transport: Mock
+    ) -> None:
+        """instrument_class skips methods already decorated with @step."""
+
+        @instrument_class(step_type="transform")
+        class MyClass:
+            def auto_instrumented(self, x: int) -> int:
+                return x + 1
+
+            @step(name="custom_name", step_type="llm")
+            def manually_decorated(self, x: int) -> int:
+                return x * 2
+
+        obj = MyClass()
+
+        with client.start_run("test_pipeline"):
+            obj.auto_instrumented(5)
+            obj.manually_decorated(5)
+
+        # run_start + auto_step_start + auto_step_end + manual_step_start + manual_step_end + run_end = 6
+        # NOT 8 (which would indicate double instrumentation)
+        assert mock_transport.send.call_count == 6
+
+        # Check the manually decorated method uses its custom name and type
+        step_starts = [
+            call[0][0] for call in mock_transport.send.call_args_list
+            if call[0][0]["event_type"] == "step_start"
+        ]
+        assert len(step_starts) == 2
+        assert step_starts[0]["step_name"] == "auto_instrumented"
+        assert step_starts[0]["step_type"] == "transform"
+        assert step_starts[1]["step_name"] == "custom_name"
+        assert step_starts[1]["step_type"] == "llm"
+
 
 class TestAttachReasoning:
     """Tests for attach_reasoning helper."""
