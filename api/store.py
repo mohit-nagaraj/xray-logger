@@ -255,6 +255,55 @@ async def get_step(session: AsyncSession, id: UUID) -> Step | None:
     return await session.get(Step, id)
 
 
+def _apply_run_filters(
+    stmt,
+    *,
+    pipeline_name: str | None = None,
+    status: str | None = None,
+    user_id: str | None = None,
+    request_id: str | None = None,
+    environment: str | None = None,
+):
+    """Apply run filters to a SQLAlchemy statement.
+
+    Shared by list_runs and count_runs to ensure consistent filtering.
+    """
+    if pipeline_name is not None:
+        stmt = stmt.where(Run.pipeline_name == pipeline_name)
+    if status is not None:
+        stmt = stmt.where(Run.status == status)
+    if user_id is not None:
+        stmt = stmt.where(Run.user_id == user_id)
+    if request_id is not None:
+        stmt = stmt.where(Run.request_id == request_id)
+    if environment is not None:
+        stmt = stmt.where(Run.environment == environment)
+    return stmt
+
+
+def _apply_step_filters(
+    stmt,
+    *,
+    run_id: UUID | None = None,
+    step_type: str | None = None,
+    step_name: str | None = None,
+    status: str | None = None,
+):
+    """Apply step filters to a SQLAlchemy statement.
+
+    Shared by list_steps and count_steps to ensure consistent filtering.
+    """
+    if run_id is not None:
+        stmt = stmt.where(Step.run_id == run_id)
+    if step_type is not None:
+        stmt = stmt.where(Step.step_type == step_type)
+    if step_name is not None:
+        stmt = stmt.where(Step.step_name == step_name)
+    if status is not None:
+        stmt = stmt.where(Step.status == status)
+    return stmt
+
+
 async def list_runs(
     session: AsyncSession,
     *,
@@ -283,18 +332,14 @@ async def list_runs(
     """
     # Secondary sort on id ensures deterministic pagination when timestamps match
     stmt = select(Run).order_by(Run.started_at.desc(), Run.id)
-
-    if pipeline_name is not None:
-        stmt = stmt.where(Run.pipeline_name == pipeline_name)
-    if status is not None:
-        stmt = stmt.where(Run.status == status)
-    if user_id is not None:
-        stmt = stmt.where(Run.user_id == user_id)
-    if request_id is not None:
-        stmt = stmt.where(Run.request_id == request_id)
-    if environment is not None:
-        stmt = stmt.where(Run.environment == environment)
-
+    stmt = _apply_run_filters(
+        stmt,
+        pipeline_name=pipeline_name,
+        status=status,
+        user_id=user_id,
+        request_id=request_id,
+        environment=environment,
+    )
     stmt = stmt.limit(limit).offset(offset)
 
     result = await session.execute(stmt)
@@ -327,16 +372,13 @@ async def list_steps(
     """
     # Secondary sort on id ensures deterministic pagination when timestamps match
     stmt = select(Step).order_by(Step.started_at.desc(), Step.id)
-
-    if run_id is not None:
-        stmt = stmt.where(Step.run_id == run_id)
-    if step_type is not None:
-        stmt = stmt.where(Step.step_type == step_type)
-    if step_name is not None:
-        stmt = stmt.where(Step.step_name == step_name)
-    if status is not None:
-        stmt = stmt.where(Step.status == status)
-
+    stmt = _apply_step_filters(
+        stmt,
+        run_id=run_id,
+        step_type=step_type,
+        step_name=step_name,
+        status=status,
+    )
     stmt = stmt.limit(limit).offset(offset)
 
     result = await session.execute(stmt)
@@ -426,3 +468,76 @@ async def get_payloads(
 
     result = await session.execute(stmt)
     return list(result.scalars().all())
+
+
+async def count_runs(
+    session: AsyncSession,
+    *,
+    pipeline_name: str | None = None,
+    status: str | None = None,
+    user_id: str | None = None,
+    request_id: str | None = None,
+    environment: str | None = None,
+) -> int:
+    """Count runs matching filters (for pagination total).
+
+    Args:
+        session: Database session
+        pipeline_name: Filter by pipeline name
+        status: Filter by status
+        user_id: Filter by user ID
+        request_id: Filter by request ID
+        environment: Filter by environment
+
+    Returns:
+        Total count of runs matching the filters.
+    """
+    from sqlalchemy import func
+
+    stmt = select(func.count()).select_from(Run)
+    stmt = _apply_run_filters(
+        stmt,
+        pipeline_name=pipeline_name,
+        status=status,
+        user_id=user_id,
+        request_id=request_id,
+        environment=environment,
+    )
+
+    result = await session.execute(stmt)
+    return result.scalar_one()
+
+
+async def count_steps(
+    session: AsyncSession,
+    *,
+    run_id: UUID | None = None,
+    step_type: str | None = None,
+    step_name: str | None = None,
+    status: str | None = None,
+) -> int:
+    """Count steps matching filters (for pagination total).
+
+    Args:
+        session: Database session
+        run_id: Filter by run ID
+        step_type: Filter by step type
+        step_name: Filter by step name
+        status: Filter by status
+
+    Returns:
+        Total count of steps matching the filters.
+    """
+    from sqlalchemy import func
+
+    stmt = select(func.count()).select_from(Step)
+    stmt = _apply_step_filters(
+        stmt,
+        run_id=run_id,
+        step_type=step_type,
+        step_name=step_name,
+        status=status,
+    )
+
+    result = await session.execute(stmt)
+    return result.scalar_one()

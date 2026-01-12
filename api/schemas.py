@@ -132,3 +132,79 @@ class IngestResponse(BaseModel):
     succeeded: int
     failed: int
     results: list[EventResult]
+
+
+# =============================================================================
+# Query Response Schemas (API → Client)
+# =============================================================================
+
+
+class StepResponse(BaseModel):
+    """Response schema for a Step in query results.
+
+    Includes the computed removed_ratio field that is calculated dynamically
+    from input_count and output_count.
+    """
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    run_id: UUID
+    step_name: str
+    step_type: str
+    index: int
+    started_at: datetime
+    ended_at: datetime | None = None
+    duration_ms: int | None = None
+    input_summary: dict[str, Any] | None = None
+    output_summary: dict[str, Any] | None = None
+    input_count: int | None = None
+    output_count: int | None = None
+    removed_ratio: float | None = None  # Computed: (input - output) / input
+    reasoning: dict[str, Any] | None = None
+    metadata: dict[str, Any] | None = Field(default=None, validation_alias="metadata_")
+    status: str | None = None
+    error_message: str | None = None
+
+
+class RunSummaryResponse(BaseModel):
+    """Response schema for Run in list results (without steps)."""
+
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+    id: UUID
+    pipeline_name: str
+    status: str
+    started_at: datetime
+    ended_at: datetime | None = None
+    input_summary: dict[str, Any] | None = None
+    output_summary: dict[str, Any] | None = None
+    metadata: dict[str, Any] | None = Field(default=None, validation_alias="metadata_")
+    request_id: str | None = None
+    user_id: str | None = None
+    environment: str | None = None
+    error_message: str | None = None
+
+
+class RunDetailResponse(RunSummaryResponse):
+    """Response schema for Run with steps (single run fetch)."""
+
+    steps: list[StepResponse] = []
+
+
+class RunListResponse(BaseModel):
+    """Paginated response for listing runs."""
+
+    runs: list[RunSummaryResponse]
+    total: int
+    limit: int
+    offset: int
+
+
+class StepListResponse(BaseModel):
+    """Paginated response for listing steps."""
+
+    steps: list[StepResponse]
+    total: int
+    limit: int
+    offset: int
