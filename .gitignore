@@ -27,6 +27,5 @@ tasks.json
 tasks/ 
 .claude/
 .taskmaster/
-.env.example
 .mcp.json
 __pycache__/
