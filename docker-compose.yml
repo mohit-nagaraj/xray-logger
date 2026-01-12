@@ -21,6 +21,10 @@ services:
       - "8000:8000"
     environment:
       XRAY_DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+
+      # Optional: Enable API key authentication
+      # Uncomment the line below to require authentication for all endpoints
+      # XRAY_API_KEY: "your-secret-api-key-change-me"
     depends_on:
       postgres:
         condition: service_healthy

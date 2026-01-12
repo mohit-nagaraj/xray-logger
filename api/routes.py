@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 logger = logging.getLogger(__name__)
 
 from . import store
+from .auth import verify_api_key
 from .database import get_session
 from .models import Step
 from .schemas import (
@@ -36,7 +37,7 @@ from .schemas import (
 router = APIRouter()
 
 
-@router.post("/ingest", response_model=IngestResponse)
+@router.post("/ingest", response_model=IngestResponse, dependencies=[Depends(verify_api_key)])
 async def ingest_events(
     events: list[IngestEvent],
     session: AsyncSession = Depends(get_session),
@@ -297,7 +298,7 @@ def _step_to_response(step: Step) -> StepResponse:
     )
 
 
-@router.get("/xray/runs/{run_id}", response_model=RunDetailResponse)
+@router.get("/xray/runs/{run_id}", response_model=RunDetailResponse, dependencies=[Depends(verify_api_key)])
 async def get_run(
     run_id: UUID,
     session: AsyncSession = Depends(get_session),
@@ -340,7 +341,7 @@ async def get_run(
     )
 
 
-@router.get("/xray/runs", response_model=RunListResponse)
+@router.get("/xray/runs", response_model=RunListResponse, dependencies=[Depends(verify_api_key)])
 async def list_runs(
     session: AsyncSession = Depends(get_session),
     pipeline_name: str | None = Query(default=None, alias="pipeline"),
@@ -395,7 +396,7 @@ async def list_runs(
     )
 
 
-@router.get("/xray/steps", response_model=StepListResponse)
+@router.get("/xray/steps", response_model=StepListResponse, dependencies=[Depends(verify_api_key)])
 async def list_steps(
     session: AsyncSession = Depends(get_session),
     run_id: UUID | None = Query(default=None),

@@ -4,7 +4,8 @@ sdk:
   # X-Ray API backend URL
   base_url: http://localhost:8000
 
-  # Optional API key for authentication
+  # Optional: API key for authentication (if server requires it)
+  # Uncomment and set this if the X-Ray API has XRAY_REQUIRE_API_KEY enabled
   # api_key: your-api-key-here
 
   # Buffer size for event queue

@@ -13,6 +13,7 @@ Usage:
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -21,6 +22,8 @@ from fastapi import FastAPI
 from .config import load_config
 from .database import close_db, init_db
 from .routes import router
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -40,6 +43,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Startup
     config = load_config()
     await init_db(config)
+
+    # Log authentication status
+    if config.api_key:
+        logger.info("API authentication: ENABLED (XRAY_API_KEY is set)")
+    else:
+        logger.info("API authentication: DISABLED (open access)")
 
     yield
 

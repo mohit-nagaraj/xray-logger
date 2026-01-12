@@ -3,6 +3,7 @@
 Environment variables take precedence over config file:
 - XRAY_DATABASE_URL: Database connection string
 - XRAY_DEBUG: Enable debug mode (true/false)
+- XRAY_API_KEY: API key for authentication (if set, auth is enabled)
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ class APIConfig(BaseModel):
 
     database_url: str = "postgresql+asyncpg://localhost:5432/xray"
     debug: bool = False
+    api_key: str | None = None
 
 
 def load_config(config_file: str | Path | None = None) -> APIConfig:
@@ -41,5 +43,7 @@ def load_config(config_file: str | Path | None = None) -> APIConfig:
         config["database_url"] = db_url
     if debug := os.environ.get("XRAY_DEBUG"):
         config["debug"] = debug.lower() in ("true", "1", "yes")
+    if api_key := os.environ.get("XRAY_API_KEY"):
+        config["api_key"] = api_key
 
     return APIConfig(**config)
