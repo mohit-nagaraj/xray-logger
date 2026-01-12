@@ -315,6 +315,11 @@ class TestMiddlewareStatusCapture:
         run_end = calls[1][0][0]
         assert run_end["status"] == "success"
 
+        # Verify metadata is included in run_end event (critical bug fix)
+        assert "metadata" in run_end
+        assert run_end["metadata"]["http.status_code"] == 200
+        assert "http.duration_ms" in run_end["metadata"]
+
     def test_404_status_captured(self, client, xray_client, mock_transport) -> None:
         """404 status is captured (but not treated as error)."""
         response = client.get("/not-found")
@@ -674,3 +679,42 @@ class TestMiddlewareHeaderCapture:
         metadata = run_start.get("metadata", {})
         assert "http.user_agent" in metadata
         assert metadata["http.user_agent"] == "Test Client"
+        # Also check request_headers dict
+        assert "http.request_headers" in metadata
+        assert metadata["http.request_headers"]["user-agent"] == "Test Client"
+
+    def test_sensitive_headers_are_redacted(self, xray_client, mock_transport) -> None:
+        """Sensitive headers like Authorization are redacted."""
+        app = FastAPI()
+        app.add_middleware(XRayMiddleware, capture_headers=True)
+
+        @app.get("/test")
+        async def test_route():
+            return {"status": "ok"}
+
+        client = TestClient(app)
+        response = client.get(
+            "/test",
+            headers={
+                "User-Agent": "Test Client",
+                "Authorization": "Bearer secret-token-12345",
+                "X-Api-Key": "my-secret-api-key",
+                "X-Custom-Header": "not-sensitive",
+            },
+        )
+
+        assert response.status_code == 200
+
+        # Check that sensitive headers are redacted
+        calls = mock_transport.send.call_args_list
+        run_start = calls[0][0][0]
+        metadata = run_start.get("metadata", {})
+        request_headers = metadata.get("http.request_headers", {})
+
+        # Non-sensitive headers should be preserved
+        assert request_headers.get("user-agent") == "Test Client"
+        assert request_headers.get("x-custom-header") == "not-sensitive"
+
+        # Sensitive headers should be redacted
+        assert request_headers.get("authorization") == "[REDACTED]"
+        assert request_headers.get("x-api-key") == "[REDACTED]"

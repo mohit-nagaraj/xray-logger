@@ -39,6 +39,22 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Headers that should be redacted for security
+# These may contain sensitive information like tokens, credentials, or session data
+SENSITIVE_HEADERS = frozenset({
+    "authorization",
+    "cookie",
+    "set-cookie",
+    "proxy-authorization",
+    "x-api-key",
+    "x-auth-token",
+    "x-access-token",
+    "x-csrf-token",
+    "x-xsrf-token",
+})
+
+REDACTED_VALUE = "[REDACTED]"
+
 
 class XRayMiddleware(BaseHTTPMiddleware):
     """Middleware that wraps HTTP requests in X-Ray Runs.
@@ -141,7 +157,7 @@ class XRayMiddleware(BaseHTTPMiddleware):
 
         if self._capture_headers:
             metadata["http.user_agent"] = request.headers.get("user-agent")
-            metadata["http.request_headers"] = dict(request.headers)
+            metadata["http.request_headers"] = self._redact_headers(dict(request.headers))
 
         # Track timing
         start_time = time.perf_counter()
@@ -165,7 +181,9 @@ class XRayMiddleware(BaseHTTPMiddleware):
                 run.metadata["http.duration_ms"] = round(duration_ms, 2)
 
                 if self._capture_headers and hasattr(response, "headers"):
-                    run.metadata["http.response_headers"] = dict(response.headers)
+                    run.metadata["http.response_headers"] = self._redact_headers(
+                        dict(response.headers)
+                    )
 
                 # Run ends automatically via context manager
                 # Status will be 'success' since no exception was raised
@@ -192,8 +210,8 @@ class XRayMiddleware(BaseHTTPMiddleware):
         if not self._path_template_extraction:
             return str(request.url.path)
 
-        # FastAPI stores the matched route in request.scope["route"]
-        # and the path template in request.scope["path"]
+        # FastAPI stores the matched route in request.scope["route"], which contains
+        # the path template (e.g., "/users/{user_id}") in route.path
         scope = request.scope
 
         # Try to get route path template from FastAPI/Starlette
@@ -205,3 +223,17 @@ class XRayMiddleware(BaseHTTPMiddleware):
 
         # Fallback to raw path
         return str(request.url.path)
+
+    def _redact_headers(self, headers: dict[str, str]) -> dict[str, str]:
+        """Redact sensitive headers to prevent leaking credentials.
+
+        Args:
+            headers: Dictionary of header names to values
+
+        Returns:
+            New dictionary with sensitive headers redacted
+        """
+        return {
+            name: REDACTED_VALUE if name.lower() in SENSITIVE_HEADERS else value
+            for name, value in headers.items()
+        }
