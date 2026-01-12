@@ -7,7 +7,6 @@ maintain temporal dependencies (run before step, start before end).
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from uuid import UUID
 
@@ -368,26 +367,24 @@ async def list_runs(
     Returns:
         Paginated list of runs (without steps)
     """
-    # Run count and list queries concurrently
-    total, runs = await asyncio.gather(
-        store.count_runs(
-            session,
-            pipeline_name=pipeline_name,
-            status=status,
-            user_id=user_id,
-            request_id=request_id,
-            environment=environment,
-        ),
-        store.list_runs(
-            session,
-            pipeline_name=pipeline_name,
-            status=status,
-            user_id=user_id,
-            request_id=request_id,
-            environment=environment,
-            limit=limit,
-            offset=offset,
-        ),
+    # Note: Sequential queries required - AsyncSession is not safe for concurrent use
+    total = await store.count_runs(
+        session,
+        pipeline_name=pipeline_name,
+        status=status,
+        user_id=user_id,
+        request_id=request_id,
+        environment=environment,
+    )
+    runs = await store.list_runs(
+        session,
+        pipeline_name=pipeline_name,
+        status=status,
+        user_id=user_id,
+        request_id=request_id,
+        environment=environment,
+        limit=limit,
+        offset=offset,
     )
 
     return RunListResponse(
@@ -424,24 +421,22 @@ async def list_steps(
     Returns:
         Paginated list of steps with computed removed_ratio
     """
-    # Run count and list queries concurrently
-    total, steps = await asyncio.gather(
-        store.count_steps(
-            session,
-            run_id=run_id,
-            step_type=step_type,
-            step_name=step_name,
-            status=status,
-        ),
-        store.list_steps(
-            session,
-            run_id=run_id,
-            step_type=step_type,
-            step_name=step_name,
-            status=status,
-            limit=limit,
-            offset=offset,
-        ),
+    # Note: Sequential queries required - AsyncSession is not safe for concurrent use
+    total = await store.count_steps(
+        session,
+        run_id=run_id,
+        step_type=step_type,
+        step_name=step_name,
+        status=status,
+    )
+    steps = await store.list_steps(
+        session,
+        run_id=run_id,
+        step_type=step_type,
+        step_name=step_name,
+        status=status,
+        limit=limit,
+        offset=offset,
     )
 
     return StepListResponse(
