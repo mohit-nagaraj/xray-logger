@@ -85,6 +85,13 @@ def infer_count(obj: Any) -> int | None:
             if key in obj and isinstance(obj[key], (list, tuple)):
                 return len(obj[key])
 
+        # Handle decorator pattern: {"args": (list_arg,), "kwargs": {...}}
+        # If first positional arg is a list-like, use its count
+        if "args" in obj and isinstance(obj["args"], tuple) and len(obj["args"]) > 0:
+            first_arg = obj["args"][0]
+            if isinstance(first_arg, (list, tuple, set, frozenset)):
+                return len(first_arg)
+
     # Check for __len__ on iterables (but not strings/dicts)
     if hasattr(obj, "__len__") and not isinstance(obj, (str, bytes, dict)):
         try:
