@@ -234,4 +234,9 @@ class Run:
             "error_message": self._error_message,
             "_payloads": self._output_payloads,
         }
+
+        # Include final metadata (may have been updated during run execution)
+        if self._metadata:
+            event["metadata"] = self._metadata
+
         self._transport.send(event)

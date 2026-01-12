@@ -15,6 +15,7 @@ from .decorators import (
     instrument_class,
     step,
 )
+from .middleware import XRayMiddleware
 from .run import Run
 from .step import (
     LARGE_LIST_THRESHOLD,
@@ -50,6 +51,7 @@ __all__ = [
     "Run",
     "Step",
     "PayloadCollector",
+    "XRayMiddleware",
     # Utilities
     "infer_count",
     "summarize_payload",
