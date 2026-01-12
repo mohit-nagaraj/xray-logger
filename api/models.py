@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import JSON, ForeignKey, Index, String, Text, text
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
@@ -65,8 +65,8 @@ class Run(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True)
     pipeline_name: Mapped[str] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(20), default="running")
-    started_at: Mapped[datetime]
-    ended_at: Mapped[datetime | None] = mapped_column(default=None)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     input_summary: Mapped[dict[str, Any] | None] = mapped_column(JSONType, default=None)
     output_summary: Mapped[dict[str, Any] | None] = mapped_column(JSONType, default=None)
     metadata_: Mapped[dict[str, Any] | None] = mapped_column(
@@ -127,8 +127,8 @@ class Step(Base):
     step_name: Mapped[str] = mapped_column(String(255))
     step_type: Mapped[str] = mapped_column(String(50))
     index: Mapped[int]
-    started_at: Mapped[datetime]
-    ended_at: Mapped[datetime | None] = mapped_column(default=None)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     duration_ms: Mapped[int | None] = mapped_column(default=None)
     input_summary: Mapped[dict[str, Any] | None] = mapped_column(JSONType, default=None)
     output_summary: Mapped[dict[str, Any] | None] = mapped_column(JSONType, default=None)
