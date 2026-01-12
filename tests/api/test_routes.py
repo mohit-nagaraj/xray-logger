@@ -605,3 +605,706 @@ class TestIngestPayloads:
         assert input_payload.step_id == step_id
         assert output_payload.ref_id == "p-output"
         assert output_payload.step_id == step_id
+
+
+# =============================================================================
+# Query Endpoint Tests
+# =============================================================================
+
+
+class TestGetRunById:
+    """Tests for GET /xray/runs/{id}."""
+
+    def test_get_run_returns_run_with_steps(self, client):
+        """GET /xray/runs/{id} returns run with steps ordered by start time."""
+        run_id = str(uuid4())
+        step1_id = str(uuid4())
+        step2_id = str(uuid4())
+
+        # Create run with steps (create second step first to test ordering)
+        events = [
+            {
+                "event_type": "run_start",
+                "id": run_id,
+                "pipeline_name": "test_pipeline",
+                "status": "running",
+                "started_at": "2024-01-15T10:00:00Z",
+            },
+            {
+                "event_type": "step_start",
+                "id": step2_id,  # Create second step first
+                "run_id": run_id,
+                "step_name": "step_b",
+                "step_type": "rank",
+                "index": 1,
+                "started_at": "2024-01-15T10:00:02Z",
+            },
+            {
+                "event_type": "step_start",
+                "id": step1_id,
+                "run_id": run_id,
+                "step_name": "step_a",
+                "step_type": "filter",
+                "index": 0,
+                "started_at": "2024-01-15T10:00:01Z",
+            },
+        ]
+        client.post("/ingest", json=events)
+
+        response = client.get(f"/xray/runs/{run_id}")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == run_id
+        assert data["pipeline_name"] == "test_pipeline"
+        assert len(data["steps"]) == 2
+        # Steps should be sorted by started_at
+        assert data["steps"][0]["step_name"] == "step_a"
+        assert data["steps"][1]["step_name"] == "step_b"
+
+    def test_get_run_not_found(self, client):
+        """GET /xray/runs/{id} returns 404 for non-existent run."""
+        response = client.get(f"/xray/runs/{uuid4()}")
+
+        assert response.status_code == 404
+        assert "not found" in response.json()["detail"].lower()
+
+    def test_get_run_steps_have_removed_ratio(self, client):
+        """GET /xray/runs/{id} includes computed removed_ratio for steps."""
+        run_id = str(uuid4())
+        step_id = str(uuid4())
+
+        events = [
+            {
+                "event_type": "run_start",
+                "id": run_id,
+                "pipeline_name": "test",
+                "status": "running",
+                "started_at": FIXED_START_TIME,
+            },
+            {
+                "event_type": "step_start",
+                "id": step_id,
+                "run_id": run_id,
+                "step_name": "filter",
+                "step_type": "filter",
+                "index": 0,
+                "started_at": FIXED_START_TIME,
+                "input_count": 100,
+            },
+            {
+                "event_type": "step_end",
+                "id": step_id,
+                "run_id": run_id,
+                "status": "success",
+                "ended_at": FIXED_END_TIME,
+                "output_count": 10,
+            },
+        ]
+        client.post("/ingest", json=events)
+
+        response = client.get(f"/xray/runs/{run_id}")
+
+        assert response.status_code == 200
+        step = response.json()["steps"][0]
+        assert step["input_count"] == 100
+        assert step["output_count"] == 10
+        assert step["removed_ratio"] == 0.9  # (100 - 10) / 100
+
+    def test_get_run_includes_all_fields(self, client):
+        """GET /xray/runs/{id} includes all run fields."""
+        run_id = str(uuid4())
+
+        events = [
+            {
+                "event_type": "run_start",
+                "id": run_id,
+                "pipeline_name": "full_pipeline",
+                "status": "running",
+                "started_at": FIXED_START_TIME,
+                "input_summary": {"query": "test"},
+                "metadata": {"custom": "value"},
+                "request_id": "req-123",
+                "user_id": "user-456",
+                "environment": "production",
+            },
+            {
+                "event_type": "run_end",
+                "id": run_id,
+                "status": "success",
+                "ended_at": FIXED_END_TIME,
+                "output_summary": {"result": "done"},
+            },
+        ]
+        client.post("/ingest", json=events)
+
+        response = client.get(f"/xray/runs/{run_id}")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["pipeline_name"] == "full_pipeline"
+        assert data["status"] == "success"
+        assert data["input_summary"] == {"query": "test"}
+        assert data["output_summary"] == {"result": "done"}
+        assert data["metadata"] == {"custom": "value"}
+        assert data["request_id"] == "req-123"
+        assert data["user_id"] == "user-456"
+        assert data["environment"] == "production"
+
+
+class TestListRuns:
+    """Tests for GET /xray/runs."""
+
+    def test_list_runs_returns_all(self, client):
+        """GET /xray/runs returns all runs."""
+        for i in range(3):
+            event = {
+                "event_type": "run_start",
+                "id": str(uuid4()),
+                "pipeline_name": f"pipeline_{i}",
+                "status": "running",
+                "started_at": FIXED_START_TIME,
+            }
+            client.post("/ingest", json=[event])
+
+        response = client.get("/xray/runs")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 3
+        assert len(data["runs"]) == 3
+
+    def test_list_runs_filter_by_pipeline(self, client):
+        """GET /xray/runs?pipeline=X filters by pipeline name."""
+        for name in ["target", "other1", "other2"]:
+            event = {
+                "event_type": "run_start",
+                "id": str(uuid4()),
+                "pipeline_name": name,
+                "status": "running",
+                "started_at": FIXED_START_TIME,
+            }
+            client.post("/ingest", json=[event])
+
+        response = client.get("/xray/runs?pipeline=target")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 1
+        assert data["runs"][0]["pipeline_name"] == "target"
+
+    def test_list_runs_filter_by_status(self, client):
+        """GET /xray/runs?status=X filters by status."""
+        run_id = str(uuid4())
+        events = [
+            {
+                "event_type": "run_start",
+                "id": run_id,
+                "pipeline_name": "test",
+                "status": "running",
+                "started_at": FIXED_START_TIME,
+            },
+            {
+                "event_type": "run_end",
+                "id": run_id,
+                "status": "success",
+                "ended_at": FIXED_END_TIME,
+            },
+        ]
+        client.post("/ingest", json=events)
+
+        # Create another running run
+        client.post(
+            "/ingest",
+            json=[
+                {
+                    "event_type": "run_start",
+                    "id": str(uuid4()),
+                    "pipeline_name": "test2",
+                    "status": "running",
+                    "started_at": FIXED_START_TIME,
+                }
+            ],
+        )
+
+        response = client.get("/xray/runs?status=success")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 1
+        assert data["runs"][0]["status"] == "success"
+
+    def test_list_runs_filter_by_user_id(self, client):
+        """GET /xray/runs?user_id=X filters by user ID."""
+        for user in ["user-123", "user-456"]:
+            event = {
+                "event_type": "run_start",
+                "id": str(uuid4()),
+                "pipeline_name": "test",
+                "status": "running",
+                "started_at": FIXED_START_TIME,
+                "user_id": user,
+            }
+            client.post("/ingest", json=[event])
+
+        response = client.get("/xray/runs?user_id=user-123")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 1
+        assert data["runs"][0]["user_id"] == "user-123"
+
+    def test_list_runs_pagination(self, client):
+        """GET /xray/runs supports limit and offset pagination."""
+        for i in range(5):
+            event = {
+                "event_type": "run_start",
+                "id": str(uuid4()),
+                "pipeline_name": f"pipeline_{i}",
+                "status": "running",
+                "started_at": FIXED_START_TIME,
+            }
+            client.post("/ingest", json=[event])
+
+        response = client.get("/xray/runs?limit=2&offset=0")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 5  # Total count is all matching
+        assert len(data["runs"]) == 2  # But only 2 returned
+        assert data["limit"] == 2
+        assert data["offset"] == 0
+
+    def test_list_runs_does_not_include_steps(self, client):
+        """GET /xray/runs does not include steps in response."""
+        run_id = str(uuid4())
+        events = [
+            {
+                "event_type": "run_start",
+                "id": run_id,
+                "pipeline_name": "test",
+                "status": "running",
+                "started_at": FIXED_START_TIME,
+            },
+            {
+                "event_type": "step_start",
+                "id": str(uuid4()),
+                "run_id": run_id,
+                "step_name": "step",
+                "step_type": "filter",
+                "index": 0,
+                "started_at": FIXED_START_TIME,
+            },
+        ]
+        client.post("/ingest", json=events)
+
+        response = client.get("/xray/runs")
+
+        assert response.status_code == 200
+        run = response.json()["runs"][0]
+        assert "steps" not in run
+
+    def test_list_runs_empty(self, client):
+        """GET /xray/runs returns empty list when no runs exist."""
+        response = client.get("/xray/runs")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 0
+        assert data["runs"] == []
+
+
+class TestListSteps:
+    """Tests for GET /xray/steps."""
+
+    def test_list_steps_returns_all(self, client):
+        """GET /xray/steps returns all steps."""
+        run_id = str(uuid4())
+        client.post(
+            "/ingest",
+            json=[
+                {
+                    "event_type": "run_start",
+                    "id": run_id,
+                    "pipeline_name": "test",
+                    "status": "running",
+                    "started_at": FIXED_START_TIME,
+                }
+            ],
+        )
+
+        for i in range(3):
+            event = {
+                "event_type": "step_start",
+                "id": str(uuid4()),
+                "run_id": run_id,
+                "step_name": f"step_{i}",
+                "step_type": "filter",
+                "index": i,
+                "started_at": FIXED_START_TIME,
+            }
+            client.post("/ingest", json=[event])
+
+        response = client.get("/xray/steps")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 3
+        assert len(data["steps"]) == 3
+
+    def test_list_steps_filter_by_run_id(self, client):
+        """GET /xray/steps?run_id=X filters by run ID."""
+        run1_id = str(uuid4())
+        run2_id = str(uuid4())
+
+        for run_id in [run1_id, run2_id]:
+            client.post(
+                "/ingest",
+                json=[
+                    {
+                        "event_type": "run_start",
+                        "id": run_id,
+                        "pipeline_name": "test",
+                        "status": "running",
+                        "started_at": FIXED_START_TIME,
+                    }
+                ],
+            )
+            client.post(
+                "/ingest",
+                json=[
+                    {
+                        "event_type": "step_start",
+                        "id": str(uuid4()),
+                        "run_id": run_id,
+                        "step_name": "step",
+                        "step_type": "filter",
+                        "index": 0,
+                        "started_at": FIXED_START_TIME,
+                    }
+                ],
+            )
+
+        response = client.get(f"/xray/steps?run_id={run1_id}")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 1
+        assert data["steps"][0]["run_id"] == run1_id
+
+    def test_list_steps_filter_by_type(self, client):
+        """GET /xray/steps?step_type=X filters by step type."""
+        run_id = str(uuid4())
+        client.post(
+            "/ingest",
+            json=[
+                {
+                    "event_type": "run_start",
+                    "id": run_id,
+                    "pipeline_name": "test",
+                    "status": "running",
+                    "started_at": FIXED_START_TIME,
+                }
+            ],
+        )
+
+        for i, step_type in enumerate(["filter", "rank", "filter"]):
+            client.post(
+                "/ingest",
+                json=[
+                    {
+                        "event_type": "step_start",
+                        "id": str(uuid4()),
+                        "run_id": run_id,
+                        "step_name": f"step_{i}",
+                        "step_type": step_type,
+                        "index": i,
+                        "started_at": FIXED_START_TIME,
+                    }
+                ],
+            )
+
+        response = client.get("/xray/steps?step_type=filter")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 2
+        assert all(s["step_type"] == "filter" for s in data["steps"])
+
+    def test_list_steps_includes_removed_ratio(self, client):
+        """GET /xray/steps includes computed removed_ratio."""
+        run_id = str(uuid4())
+        step_id = str(uuid4())
+
+        events = [
+            {
+                "event_type": "run_start",
+                "id": run_id,
+                "pipeline_name": "test",
+                "status": "running",
+                "started_at": FIXED_START_TIME,
+            },
+            {
+                "event_type": "step_start",
+                "id": step_id,
+                "run_id": run_id,
+                "step_name": "aggressive_filter",
+                "step_type": "filter",
+                "index": 0,
+                "started_at": FIXED_START_TIME,
+                "input_count": 100,
+            },
+            {
+                "event_type": "step_end",
+                "id": step_id,
+                "run_id": run_id,
+                "status": "success",
+                "ended_at": FIXED_END_TIME,
+                "output_count": 5,
+            },
+        ]
+        client.post("/ingest", json=events)
+
+        response = client.get("/xray/steps")
+
+        assert response.status_code == 200
+        step = response.json()["steps"][0]
+        assert step["removed_ratio"] == 0.95  # (100 - 5) / 100
+
+    def test_list_steps_pagination(self, client):
+        """GET /xray/steps supports pagination."""
+        run_id = str(uuid4())
+        client.post(
+            "/ingest",
+            json=[
+                {
+                    "event_type": "run_start",
+                    "id": run_id,
+                    "pipeline_name": "test",
+                    "status": "running",
+                    "started_at": FIXED_START_TIME,
+                }
+            ],
+        )
+
+        for i in range(5):
+            client.post(
+                "/ingest",
+                json=[
+                    {
+                        "event_type": "step_start",
+                        "id": str(uuid4()),
+                        "run_id": run_id,
+                        "step_name": f"step_{i}",
+                        "step_type": "filter",
+                        "index": i,
+                        "started_at": FIXED_START_TIME,
+                    }
+                ],
+            )
+
+        response = client.get("/xray/steps?limit=2&offset=1")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 5
+        assert len(data["steps"]) == 2
+        assert data["limit"] == 2
+        assert data["offset"] == 1
+
+
+class TestRemovedRatioEdgeCases:
+    """Tests for removed_ratio computation edge cases."""
+
+    def test_removed_ratio_input_count_zero(self, client):
+        """removed_ratio is null when input_count is 0."""
+        run_id = str(uuid4())
+        step_id = str(uuid4())
+
+        events = [
+            {
+                "event_type": "run_start",
+                "id": run_id,
+                "pipeline_name": "test",
+                "status": "running",
+                "started_at": FIXED_START_TIME,
+            },
+            {
+                "event_type": "step_start",
+                "id": step_id,
+                "run_id": run_id,
+                "step_name": "empty_input",
+                "step_type": "filter",
+                "index": 0,
+                "started_at": FIXED_START_TIME,
+                "input_count": 0,
+            },
+            {
+                "event_type": "step_end",
+                "id": step_id,
+                "run_id": run_id,
+                "status": "success",
+                "ended_at": FIXED_END_TIME,
+                "output_count": 0,
+            },
+        ]
+        client.post("/ingest", json=events)
+
+        response = client.get(f"/xray/runs/{run_id}")
+
+        assert response.status_code == 200
+        step = response.json()["steps"][0]
+        assert step["removed_ratio"] is None  # Division by zero
+
+    def test_removed_ratio_input_count_none(self, client):
+        """removed_ratio is null when input_count is None."""
+        run_id = str(uuid4())
+        step_id = str(uuid4())
+
+        events = [
+            {
+                "event_type": "run_start",
+                "id": run_id,
+                "pipeline_name": "test",
+                "status": "running",
+                "started_at": FIXED_START_TIME,
+            },
+            {
+                "event_type": "step_start",
+                "id": step_id,
+                "run_id": run_id,
+                "step_name": "no_input_count",
+                "step_type": "llm",
+                "index": 0,
+                "started_at": FIXED_START_TIME,
+                # input_count not provided
+            },
+            {
+                "event_type": "step_end",
+                "id": step_id,
+                "run_id": run_id,
+                "status": "success",
+                "ended_at": FIXED_END_TIME,
+                "output_count": 1,
+            },
+        ]
+        client.post("/ingest", json=events)
+
+        response = client.get(f"/xray/runs/{run_id}")
+
+        assert response.status_code == 200
+        step = response.json()["steps"][0]
+        assert step["removed_ratio"] is None
+
+    def test_removed_ratio_output_count_none(self, client):
+        """removed_ratio is null when output_count is None."""
+        run_id = str(uuid4())
+        step_id = str(uuid4())
+
+        events = [
+            {
+                "event_type": "run_start",
+                "id": run_id,
+                "pipeline_name": "test",
+                "status": "running",
+                "started_at": FIXED_START_TIME,
+            },
+            {
+                "event_type": "step_start",
+                "id": step_id,
+                "run_id": run_id,
+                "step_name": "incomplete_step",
+                "step_type": "filter",
+                "index": 0,
+                "started_at": FIXED_START_TIME,
+                "input_count": 100,
+            },
+            # step_end not sent, so output_count remains None
+        ]
+        client.post("/ingest", json=events)
+
+        response = client.get(f"/xray/runs/{run_id}")
+
+        assert response.status_code == 200
+        step = response.json()["steps"][0]
+        assert step["removed_ratio"] is None
+
+    def test_removed_ratio_negative_removal(self, client):
+        """removed_ratio can be negative when output > input (expansion)."""
+        run_id = str(uuid4())
+        step_id = str(uuid4())
+
+        events = [
+            {
+                "event_type": "run_start",
+                "id": run_id,
+                "pipeline_name": "test",
+                "status": "running",
+                "started_at": FIXED_START_TIME,
+            },
+            {
+                "event_type": "step_start",
+                "id": step_id,
+                "run_id": run_id,
+                "step_name": "expansion_step",
+                "step_type": "transform",
+                "index": 0,
+                "started_at": FIXED_START_TIME,
+                "input_count": 10,
+            },
+            {
+                "event_type": "step_end",
+                "id": step_id,
+                "run_id": run_id,
+                "status": "success",
+                "ended_at": FIXED_END_TIME,
+                "output_count": 50,  # Expanded from 10 to 50
+            },
+        ]
+        client.post("/ingest", json=events)
+
+        response = client.get(f"/xray/runs/{run_id}")
+
+        assert response.status_code == 200
+        step = response.json()["steps"][0]
+        assert step["removed_ratio"] == -4.0  # (10 - 50) / 10 = -4.0
+
+    def test_removed_ratio_exact_zero(self, client):
+        """removed_ratio is 0.0 when input equals output."""
+        run_id = str(uuid4())
+        step_id = str(uuid4())
+
+        events = [
+            {
+                "event_type": "run_start",
+                "id": run_id,
+                "pipeline_name": "test",
+                "status": "running",
+                "started_at": FIXED_START_TIME,
+            },
+            {
+                "event_type": "step_start",
+                "id": step_id,
+                "run_id": run_id,
+                "step_name": "passthrough",
+                "step_type": "transform",
+                "index": 0,
+                "started_at": FIXED_START_TIME,
+                "input_count": 50,
+            },
+            {
+                "event_type": "step_end",
+                "id": step_id,
+                "run_id": run_id,
+                "status": "success",
+                "ended_at": FIXED_END_TIME,
+                "output_count": 50,
+            },
+        ]
+        client.post("/ingest", json=events)
+
+        response = client.get(f"/xray/runs/{run_id}")
+
+        assert response.status_code == 200
+        step = response.json()["steps"][0]
+        assert step["removed_ratio"] == 0.0

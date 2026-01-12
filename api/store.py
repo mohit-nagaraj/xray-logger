@@ -426,3 +426,81 @@ async def get_payloads(
 
     result = await session.execute(stmt)
     return list(result.scalars().all())
+
+
+async def count_runs(
+    session: AsyncSession,
+    *,
+    pipeline_name: str | None = None,
+    status: str | None = None,
+    user_id: str | None = None,
+    request_id: str | None = None,
+    environment: str | None = None,
+) -> int:
+    """Count runs matching filters (for pagination total).
+
+    Args:
+        session: Database session
+        pipeline_name: Filter by pipeline name
+        status: Filter by status
+        user_id: Filter by user ID
+        request_id: Filter by request ID
+        environment: Filter by environment
+
+    Returns:
+        Total count of runs matching the filters.
+    """
+    from sqlalchemy import func
+
+    stmt = select(func.count()).select_from(Run)
+
+    if pipeline_name is not None:
+        stmt = stmt.where(Run.pipeline_name == pipeline_name)
+    if status is not None:
+        stmt = stmt.where(Run.status == status)
+    if user_id is not None:
+        stmt = stmt.where(Run.user_id == user_id)
+    if request_id is not None:
+        stmt = stmt.where(Run.request_id == request_id)
+    if environment is not None:
+        stmt = stmt.where(Run.environment == environment)
+
+    result = await session.execute(stmt)
+    return result.scalar_one()
+
+
+async def count_steps(
+    session: AsyncSession,
+    *,
+    run_id: UUID | None = None,
+    step_type: str | None = None,
+    step_name: str | None = None,
+    status: str | None = None,
+) -> int:
+    """Count steps matching filters (for pagination total).
+
+    Args:
+        session: Database session
+        run_id: Filter by run ID
+        step_type: Filter by step type
+        step_name: Filter by step name
+        status: Filter by status
+
+    Returns:
+        Total count of steps matching the filters.
+    """
+    from sqlalchemy import func
+
+    stmt = select(func.count()).select_from(Step)
+
+    if run_id is not None:
+        stmt = stmt.where(Step.run_id == run_id)
+    if step_type is not None:
+        stmt = stmt.where(Step.step_type == step_type)
+    if step_name is not None:
+        stmt = stmt.where(Step.step_name == step_name)
+    if status is not None:
+        stmt = stmt.where(Step.status == status)
+
+    result = await session.execute(stmt)
+    return result.scalar_one()
