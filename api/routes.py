@@ -15,9 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
-from . import store
+from ._internal import store
+from ._internal.database import get_session
 from .auth import verify_api_key
-from .database import get_session
 from .models import Step
 from .schemas import (
     EventResult,

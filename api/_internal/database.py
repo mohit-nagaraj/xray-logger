@@ -30,8 +30,8 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
-from .config import APIConfig
-from .models import Base
+from ..config import APIConfig
+from ..models import Base
 
 # Global engine and session factory (initialized by init_db)
 _engine: AsyncEngine | None = None

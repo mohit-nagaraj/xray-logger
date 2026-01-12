@@ -4,8 +4,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from sdk.run import Run
-from sdk.step import LARGE_LIST_THRESHOLD
+from sdk._internal.run import Run
+from sdk._internal.step import LARGE_LIST_THRESHOLD
 from shared.types import RunStatus, StepType
 
 

@@ -27,7 +27,7 @@ from shared.types import StepType
 from .client import current_run, current_step
 
 if TYPE_CHECKING:
-    from .step import Step
+    from ._internal.step import Step
 
 # Type variables for generic decorator typing
 F = TypeVar("F", bound=Callable[..., Any])

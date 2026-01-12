@@ -9,7 +9,7 @@ from typing import Any
 
 import httpx
 
-from .config import XRayConfig
+from ..config import XRayConfig
 
 logger = logging.getLogger(__name__)
 

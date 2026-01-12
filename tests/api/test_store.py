@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from api import store
+from api._internal import store
 from api.models import Base, Run, Step
 
 

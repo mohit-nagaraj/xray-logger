@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from sdk.step import (
+from sdk._internal.step import (
     LARGE_LIST_THRESHOLD,
     LARGE_STRING_THRESHOLD,
     MAX_STRING_LENGTH,

@@ -6,8 +6,8 @@ import httpx
 import pytest
 import respx
 
+from sdk._internal.transport import Transport
 from sdk.config import XRayConfig
-from sdk.transport import Transport
 
 
 class TestTransportInit:

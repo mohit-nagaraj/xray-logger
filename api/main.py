@@ -19,8 +19,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from ._internal.database import close_db, init_db
 from .config import load_config
-from .database import close_db, init_db
 from .routes import router
 
 logger = logging.getLogger(__name__)

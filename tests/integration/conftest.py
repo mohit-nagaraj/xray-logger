@@ -20,7 +20,7 @@ from fastapi import FastAPI
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from api.database import get_session
+from api._internal.database import get_session
 from api.models import Base
 from api.routes import router
 from sdk import XRayConfig, init_xray, shutdown_xray

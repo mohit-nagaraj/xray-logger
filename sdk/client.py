@@ -37,12 +37,12 @@ from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from typing import TYPE_CHECKING, Any, Generator
 
+from ._internal.run import Run
+from ._internal.transport import Transport
 from .config import XRayConfig, load_config
-from .run import Run
-from .transport import Transport
 
 if TYPE_CHECKING:
-    from .step import Step
+    from ._internal.step import Step
 
 logger = logging.getLogger(__name__)
 
