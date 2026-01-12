@@ -1,0 +1,6 @@
+# FastAPI and web server
+fastapi>=0.109
+uvicorn>=0.27
+
+# X-Ray SDK (install from parent directory)
+-e ../..
