@@ -17,18 +17,17 @@ Usage:
 
 import sys
 
-from sdk import XRayConfig, init_xray, shutdown_xray
+from sdk import init_xray, load_config, shutdown_xray
 
 from .pipeline import run_competitor_analysis
 
 
 def main() -> None:
-    # Initialize X-Ray SDK
-    config = XRayConfig(
-        base_url="http://localhost:8000",
-        buffer_size=100,
-        flush_interval=2.0,
-    )
+    # Initialize X-Ray SDK from config file
+    print("Loading X-Ray configuration from xray.config.yaml...")
+    config = load_config()
+    print(f"Configuration loaded: base_url={config.base_url}, buffer_size={config.buffer_size}")
+
     client = init_xray(config)
 
     print("X-Ray SDK initialized")

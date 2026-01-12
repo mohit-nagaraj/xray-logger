@@ -1,0 +1,20 @@
+# X-Ray SDK Configuration for Competitor Analysis Pipeline
+
+sdk:
+  # X-Ray API backend URL
+  base_url: http://localhost:8000
+
+  # Optional API key for authentication
+  # api_key: your-api-key-here
+
+  # Buffer size for event queue
+  buffer_size: 100
+
+  # Flush interval in seconds
+  flush_interval: 2.0
+
+  # Batch size for sending events
+  batch_size: 100
+
+  # HTTP timeout in seconds
+  http_timeout: 30.0

@@ -24,7 +24,7 @@ Usage:
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from sdk import XRayConfig, init_xray, shutdown_xray
+from sdk import init_xray, load_config, shutdown_xray
 from sdk.middleware import XRayMiddleware
 
 from api import router
@@ -33,15 +33,12 @@ from api import router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler for startup and shutdown."""
-    # Startup: Initialize X-Ray SDK
-    print("Initializing X-Ray SDK...")
-    init_xray(
-        XRayConfig(
-            base_url="http://localhost:8000",
-            buffer_size=100,
-            flush_interval=2.0,
-        )
-    )
+    # Startup: Initialize X-Ray SDK from config file
+    print("Loading X-Ray configuration from xray.config.yaml...")
+    config = load_config()
+    print(f"Configuration loaded: base_url={config.base_url}, buffer_size={config.buffer_size}")
+
+    init_xray(config)
     print("X-Ray SDK initialized successfully")
 
     yield
