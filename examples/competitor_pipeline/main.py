@@ -34,45 +34,46 @@ def main() -> None:
     print("X-Ray SDK initialized")
     print("=" * 60)
 
-    # Run multiple analysis queries to generate data
-    test_queries = [
-        {"query": "AI analytics platform", "min_relevance": 0.7},
-        {"query": "market observability growth", "min_relevance": 0.8},
-        {"query": "competitor funding partnership", "min_relevance": 0.6},
-    ]
+    try:
+        # Run multiple analysis queries to generate data
+        test_queries = [
+            {"query": "AI analytics platform", "min_relevance": 0.7},
+            {"query": "market observability growth", "min_relevance": 0.8},
+            {"query": "competitor funding partnership", "min_relevance": 0.6},
+        ]
 
-    for i, params in enumerate(test_queries, 1):
-        print(f"\n[Run {i}] Query: '{params['query']}' (min_relevance={params['min_relevance']})")
-        print("-" * 60)
+        for i, params in enumerate(test_queries, 1):
+            print(f"\n[Run {i}] Query: '{params['query']}' (min_relevance={params['min_relevance']})")
+            print("-" * 60)
 
-        # Create a run context for this pipeline execution
-        with client.start_run(
-            pipeline_name="competitor-analysis",
-            input_data=params,
-            metadata={
-                "request_id": f"analysis-{i}",
-                "user_id": "analyst-demo",
-                "environment": "development",
-            },
-        ):
-            result = run_competitor_analysis(**params)
+            # Create a run context for this pipeline execution
+            with client.start_run(
+                pipeline_name="competitor-analysis",
+                input_data=params,
+                metadata={
+                    "request_id": f"analysis-{i}",
+                    "user_id": "analyst-demo",
+                    "environment": "development",
+                },
+            ):
+                result = run_competitor_analysis(**params)
 
-        # Display results
-        if result.get("summary"):
-            print(f"Summary: {result['summary']}")
-            print(f"Sources: {', '.join(result.get('sources', []))}")
-            print(f"Confidence: {result.get('confidence', 'N/A')}")
-        else:
-            print(f"No results: {result.get('error', 'unknown error')}")
+            # Display results
+            if result.get("summary"):
+                print(f"Summary: {result['summary']}")
+                print(f"Sources: {', '.join(result.get('sources', []))}")
+                print(f"Confidence: {result.get('confidence', 'N/A')}")
+            else:
+                print(f"No results: {result.get('error', 'unknown error')}")
 
-    print("\n" + "=" * 60)
-    print("Pipeline runs complete!")
-    print("Flushing data to X-Ray server...")
+        print("\n" + "=" * 60)
+        print("Pipeline runs complete!")
+    finally:
+        print("Flushing data to X-Ray server...")
+        # Graceful shutdown - flushes remaining events
+        shutdown_xray(timeout=5.0)
+        print("Done! Data captured in the database.")
 
-    # Graceful shutdown - flushes remaining events
-    shutdown_xray(timeout=5.0)
-
-    print("Done! Data captured in the database.")
     print("\nView captured data:")
     print("  - Query runs: GET http://localhost:8000/xray/runs?pipeline=competitor-analysis")
     print("  - Query steps: GET http://localhost:8000/xray/steps?step_type=filter")

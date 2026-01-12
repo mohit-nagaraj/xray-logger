@@ -22,6 +22,19 @@ def retrieve_documents(query: str, max_results: int = 10) -> list[dict]:
     query_lower = query.lower()
     query_terms = query_lower.split()
 
+    # Handle empty query to avoid division by zero
+    if not query_terms:
+        attach_reasoning(
+            {
+                "query": query,
+                "search_method": "keyword_match",
+                "error": "empty_query",
+                "total_corpus_size": len(DOCUMENTS),
+                "matching_documents": 0,
+            }
+        )
+        return []
+
     results = []
     for doc in DOCUMENTS:
         # Simple keyword matching (simulating vector search)
@@ -118,7 +131,7 @@ def rank_by_importance(documents: list[dict]) -> list[dict]:
         source_weight = source_weights.get(doc.get("source", ""), 0.5)
 
         # Recency bonus: documents from 2024 get a boost
-        recency_bonus = 0.1 if "2024" in doc.get("date", "") else 0
+        recency_bonus = 0.1 if doc.get("date", "").startswith("2024") else 0
 
         # Composite score
         doc["importance_score"] = round(
@@ -175,12 +188,12 @@ def generate_summary(documents: list[dict], max_docs: int = 3) -> dict:
 
     # Simulate LLM summarization
     doc_titles = [d["title"] for d in top_docs]
-    sources = list(set(d["source"] for d in top_docs))
+    source_types = list(set(d["source"] for d in top_docs))
 
     summary = (
         f"Analysis based on {len(top_docs)} documents: "
         f"Key topics include {', '.join(doc_titles[:2])}. "
-        f"Sources consulted: {', '.join(sources)}."
+        f"Sources consulted: {', '.join(source_types)}."
     )
 
     attach_reasoning(
