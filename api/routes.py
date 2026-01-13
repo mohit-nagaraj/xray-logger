@@ -264,25 +264,8 @@ async def _handle_step_end(session: AsyncSession, event: StepEndEvent) -> None:
 # =============================================================================
 
 
-def compute_removed_ratio(
-    input_count: int | None, output_count: int | None
-) -> float | None:
-    """Compute removed_ratio = (input - output) / input.
-
-    Returns None for edge cases:
-    - input_count is None (unknown input)
-    - input_count is 0 (division by zero)
-    - output_count is None (unknown output)
-    """
-    if input_count is None or output_count is None:
-        return None
-    if input_count == 0:
-        return None
-    return (input_count - output_count) / input_count
-
-
 def _step_to_response(step: Step) -> StepResponse:
-    """Convert Step ORM model to StepResponse with computed removed_ratio."""
+    """Convert Step ORM model to StepResponse using stored removed_ratio."""
     return StepResponse(
         id=step.id,
         run_id=step.run_id,
@@ -296,7 +279,7 @@ def _step_to_response(step: Step) -> StepResponse:
         output_summary=step.output_summary,
         input_count=step.input_count,
         output_count=step.output_count,
-        removed_ratio=compute_removed_ratio(step.input_count, step.output_count),
+        removed_ratio=step.removed_ratio,
         reasoning=step.reasoning,
         metadata=step.metadata_,
         status=step.status,
@@ -409,24 +392,26 @@ async def list_steps(
     step_type: str | None = Query(default=None),
     step_name: str | None = Query(default=None),
     status: str | None = Query(default=None),
+    min_removed_ratio: float | None = Query(default=None, ge=0.0, le=1.0),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
 ) -> StepListResponse:
     """List steps with optional filters and pagination.
 
     Steps are returned in descending order by started_at (most recent first).
-    Each step includes the computed removed_ratio metric.
+    Each step includes the removed_ratio metric.
 
     Args:
         run_id: Filter by parent run ID
         step_type: Filter by step type (filter, rank, llm, etc.)
         step_name: Filter by step name
         status: Filter by status (running, success, error)
+        min_removed_ratio: Filter steps with removed_ratio >= this value (0.0-1.0)
         limit: Maximum number of results (1-1000, default 100)
         offset: Number of results to skip (default 0)
 
     Returns:
-        Paginated list of steps with computed removed_ratio
+        Paginated list of steps with removed_ratio
     """
     # Note: Sequential queries required - AsyncSession is not safe for concurrent use
     total = await store.count_steps(
@@ -435,6 +420,7 @@ async def list_steps(
         step_type=step_type,
         step_name=step_name,
         status=status,
+        min_removed_ratio=min_removed_ratio,
     )
     steps = await store.list_steps(
         session,
@@ -442,6 +428,7 @@ async def list_steps(
         step_type=step_type,
         step_name=step_name,
         status=status,
+        min_removed_ratio=min_removed_ratio,
         limit=limit,
         offset=offset,
     )

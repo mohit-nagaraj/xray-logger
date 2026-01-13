@@ -171,6 +171,23 @@ async def create_step(
     return step
 
 
+def _compute_removed_ratio(
+    input_count: int | None, output_count: int | None
+) -> float | None:
+    """Compute removed_ratio = (input - output) / input.
+
+    Returns None for edge cases:
+    - input_count is None (unknown input)
+    - input_count is 0 (division by zero)
+    - output_count is None (unknown output)
+    """
+    if input_count is None or output_count is None:
+        return None
+    if input_count == 0:
+        return None
+    return (input_count - output_count) / input_count
+
+
 async def end_step(
     session: AsyncSession,
     *,
@@ -210,6 +227,7 @@ async def end_step(
     step.duration_ms = duration_ms
     step.output_summary = output_summary
     step.output_count = output_count
+    step.removed_ratio = _compute_removed_ratio(step.input_count, output_count)
     step.reasoning = reasoning
     step.error_message = error_message
 
@@ -288,6 +306,7 @@ def _apply_step_filters(
     step_type: str | None = None,
     step_name: str | None = None,
     status: str | None = None,
+    min_removed_ratio: float | None = None,
 ):
     """Apply step filters to a SQLAlchemy statement.
 
@@ -301,6 +320,8 @@ def _apply_step_filters(
         stmt = stmt.where(Step.step_name == step_name)
     if status is not None:
         stmt = stmt.where(Step.status == status)
+    if min_removed_ratio is not None:
+        stmt = stmt.where(Step.removed_ratio >= min_removed_ratio)
     return stmt
 
 
@@ -353,6 +374,7 @@ async def list_steps(
     step_type: str | None = None,
     step_name: str | None = None,
     status: str | None = None,
+    min_removed_ratio: float | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> list[Step]:
@@ -364,6 +386,7 @@ async def list_steps(
         step_type: Filter by step type
         step_name: Filter by step name
         status: Filter by status
+        min_removed_ratio: Filter steps with removed_ratio >= this value
         limit: Maximum number of results
         offset: Number of results to skip
 
@@ -378,6 +401,7 @@ async def list_steps(
         step_type=step_type,
         step_name=step_name,
         status=status,
+        min_removed_ratio=min_removed_ratio,
     )
     stmt = stmt.limit(limit).offset(offset)
 
@@ -515,6 +539,7 @@ async def count_steps(
     step_type: str | None = None,
     step_name: str | None = None,
     status: str | None = None,
+    min_removed_ratio: float | None = None,
 ) -> int:
     """Count steps matching filters (for pagination total).
 
@@ -524,6 +549,7 @@ async def count_steps(
         step_type: Filter by step type
         step_name: Filter by step name
         status: Filter by status
+        min_removed_ratio: Filter steps with removed_ratio >= this value
 
     Returns:
         Total count of steps matching the filters.
@@ -537,6 +563,7 @@ async def count_steps(
         step_type=step_type,
         step_name=step_name,
         status=status,
+        min_removed_ratio=min_removed_ratio,
     )
 
     result = await session.execute(stmt)

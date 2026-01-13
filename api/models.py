@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, String, Text, text
+from sqlalchemy import Float, JSON, DateTime, ForeignKey, Index, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
@@ -113,6 +113,7 @@ class Step(Base):
         output_summary: Summarized output data (JSONB)
         input_count: Number of input items (for list-like inputs)
         output_count: Number of output items (for list-like outputs)
+        removed_ratio: Computed ratio (input - output) / input, stored for indexing
         reasoning: Why decisions were made (JSONB)
         metadata_: Additional step-specific metadata (JSONB)
         status: Step status ("running", "success", "error")
@@ -134,6 +135,7 @@ class Step(Base):
     output_summary: Mapped[dict[str, Any] | None] = mapped_column(JSONType, default=None)
     input_count: Mapped[int | None] = mapped_column(default=None)
     output_count: Mapped[int | None] = mapped_column(default=None)
+    removed_ratio: Mapped[float | None] = mapped_column(Float, default=None)
     reasoning: Mapped[dict[str, Any] | None] = mapped_column(JSONType, default=None)
     metadata_: Mapped[dict[str, Any] | None] = mapped_column(
         "metadata", JSONType, default=None
@@ -150,6 +152,7 @@ class Step(Base):
         Index("ix_steps_step_type", "step_type"),
         Index("ix_steps_input_count", "input_count"),
         Index("ix_steps_output_count", "output_count"),
+        Index("ix_steps_removed_ratio", "removed_ratio"),
         Index("ix_steps_status", "status"),
     )
 
