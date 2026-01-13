@@ -19,7 +19,7 @@ import sys
 
 from sdk import init_xray, load_config, shutdown_xray
 
-from .pipeline import run_competitor_analysis
+from pipeline import run_competitor_analysis
 
 
 def main() -> None:

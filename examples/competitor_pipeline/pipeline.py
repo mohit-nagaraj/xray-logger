@@ -9,7 +9,7 @@ Demonstrates a Retrieval-Augmented Generation (RAG) workflow with:
 
 from sdk import attach_candidates, attach_reasoning, step
 
-from .data import DOCUMENTS
+from data import DOCUMENTS
 
 
 @step(step_type="retrieval")

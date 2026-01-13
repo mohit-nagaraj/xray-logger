@@ -22,7 +22,7 @@ WORKDIR /app
 
 # Install the wheel and API dependencies
 COPY --from=builder /wheels/*.whl /tmp/
-RUN WHEEL=$(ls /tmp/xray-*.whl) && pip install --no-cache-dir "${WHEEL}[api]" && rm /tmp/xray-*.whl
+RUN WHEEL=$(ls /tmp/*.whl) && pip install --no-cache-dir "${WHEEL}[api]" && rm /tmp/*.whl
 
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash xray

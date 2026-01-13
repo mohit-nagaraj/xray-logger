@@ -37,6 +37,12 @@ from .schemas import (
 router = APIRouter()
 
 
+@router.get("/health")
+async def health() -> dict[str, str]:
+    """Health check endpoint."""
+    return {"status": "healthy"}
+
+
 @router.post("/ingest", response_model=IngestResponse, dependencies=[Depends(verify_api_key)])
 async def ingest_events(
     events: list[IngestEvent],
