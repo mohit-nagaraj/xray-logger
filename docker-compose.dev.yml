@@ -16,7 +16,7 @@ services:
       retries: 5
 
   xray-api:
-    image: ghcr.io/mohit-nagaraj/xray-logger:latest
+    build: .
     ports:
       - "8000:8000"
     environment:
@@ -28,7 +28,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    restart: unless-stopped
 
 volumes:
   xray_data:

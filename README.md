@@ -8,6 +8,18 @@ X-Ray captures *why* decisions were made—candidates considered, filters applie
 
 ### 1. Start the Server
 
+**Option A: Docker Compose (Recommended - with PostgreSQL)**
+
+```bash
+# Download docker-compose.yml
+curl -O https://raw.githubusercontent.com/mohit-nagaraj/xray-logger/main/docker-compose.yml
+
+# Start services (PostgreSQL + X-Ray API)
+docker-compose up -d
+```
+
+**Option B: Docker Run (SQLite)**
+
 ```bash
 docker run -d -p 8000:8000 \
   -e XRAY_DATABASE_URL=sqlite+aiosqlite:///./xray.db \
@@ -60,13 +72,16 @@ with client.start_run("my-pipeline"):
 | `retrieval` | Fetching external data |
 | `transform` | Data transformations |
 
-## Self-Hosting with Docker Compose
+## Development
+
+For local development with source code:
 
 ```bash
 git clone https://github.com/mohit-nagaraj/xray-logger.git
 cd xray-logger
-cp .env.example .env
-docker-compose up -d
+
+# Use dev compose (builds from source)
+docker-compose -f docker-compose.dev.yml up -d
 ```
 
 ## License
